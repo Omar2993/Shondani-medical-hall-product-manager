@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Invoice Inventory | Simple Stock & Ledger Management',
-  description: 'Fast, paper invoice-style editable inventory and stock management system.',
+  title: 'Shondani Medical Hall | Inventory & Order Management',
+  description: 'Shondani Medical Hall - Simple, fast invoice-style inventory and product order management sheet.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Invoice Inventory',
+    title: 'Shondani Medical Hall',
   },
 };
 

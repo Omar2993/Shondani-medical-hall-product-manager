@@ -1,7 +1,7 @@
 {
-  "name": "Invoice Inventory Manager",
-  "short_name": "InvoiceInventory",
-  "description": "Editable paper invoice-style inventory management sheet",
+  "name": "Shondani Medical Hall",
+  "short_name": "Shondani",
+  "description": "Shondani Medical Hall - Simple, fast invoice-style inventory management sheet",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

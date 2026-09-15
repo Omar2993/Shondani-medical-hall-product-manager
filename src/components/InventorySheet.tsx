@@ -14,13 +14,13 @@ import { InventoryHeader } from './InventoryHeader';
 import { InventorySummary } from './InventorySummary';
 import { SearchAndFilterBar } from './SearchAndFilterBar';
 import { InventoryRow } from './InventoryRow';
-import { MobileInventoryCard } from './MobileInventoryCard';
 import { QuickBatchAddModal } from './QuickBatchAddModal';
 import { InsertAtSerialModal } from './InsertAtSerialModal';
 import { ConfirmDialog } from './ConfirmDialog';
+import { AdminLoginModal } from './AdminLoginModal';
 import { OrderSuccessModal } from './OrderSuccessModal';
 import { PrintableInvoice } from './PrintableInvoice';
-import { PlusIcon, PackageIcon, ShoppingCartIcon } from './icons';
+import { PlusIcon, PackageIcon } from './icons';
 import { 
   authorizedAddProduct, 
   authorizedUpdateProduct, 
@@ -28,7 +28,7 @@ import {
   authorizedSubmitOrder 
 } from '@/actions/authorizedProductActions';
 
-// Initial master catalog as specified in instructions
+// Initial master catalog for Shondani Medical Hall
 const INITIAL_PRODUCTS: Product[] = [
   {
     _id: 'prod_1',
@@ -65,43 +65,58 @@ const INITIAL_PRODUCTS: Product[] = [
     price: 85,
     stock: 25,
   },
+  {
+    _id: 'prod_6',
+    serialNumber: 6,
+    name: 'Anklet Support',
+    price: 280,
+    stock: 18,
+  },
+  {
+    _id: 'prod_7',
+    serialNumber: 7,
+    name: 'Surgical Tape 1-inch',
+    price: 65,
+    stock: 50,
+  },
 ];
 
-const LOCAL_STORAGE_KEY = 'inventory_catalog_data_v2';
-const LOCAL_STORAGE_ORDERS_KEY = 'inventory_user_orders_v2';
-const LOCAL_STORAGE_META_KEY = 'inventory_sheet_meta_v2';
-const LOCAL_STORAGE_ROLE_KEY = 'inventory_user_role_v2';
+const LOCAL_STORAGE_KEY = 'shondani_catalog_data_v3';
+const LOCAL_STORAGE_ORDERS_KEY = 'shondani_user_orders_v3';
+const LOCAL_STORAGE_META_KEY = 'shondani_sheet_meta_v3';
+const LOCAL_STORAGE_ADMIN_TOKEN = 'shondani_admin_token_v3';
 
 export function InventorySheet() {
-  // 1. Role State: Default to 'admin' so the user can immediately test admin features, or switch to 'user'
-  const [role, setRole] = useState<UserRole>('admin');
+  // 1. Role State: Default to 'user' so customers cannot see admin controls without authenticating
+  const [role, setRole] = useState<UserRole>('user');
+  const [adminToken, setAdminToken] = useState<string | null>(null);
 
   // 2. Master Product Catalog (Managed exclusively by Admin)
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
 
-  // 3. User Order Quantities (Completely separate from Admin stock)
-  // Mapping: { [productId]: orderedQuantity }
+  // 3. User Order Quantities (Completely separate from Admin warehouse stock)
   const [userOrders, setUserOrders] = useState<Record<string, number>>({
-    prod_1: 10, // Gauze: 10 ordered
-    prod_2: 5,  // Thumb Spica: 5 ordered
-    prod_3: 6,  // Knee Support: 6 ordered
+    prod_1: 10,
+    prod_2: 5,
+    prod_3: 6,
   });
 
-  // 4. UI Filters & Search
+  // 4. Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
 
-  // 5. Invoice Metadata
+  // 5. Invoice Metadata for Shondani Medical Hall
   const [meta, setMeta] = useState<InvoiceMeta>({
-    shopName: 'M/S MediCare Surgical & Health Store',
+    shopName: 'Shondani Medical Hall',
     invoiceTitle: 'INVENTORY / INVOICE',
-    invoiceNumber: 'INV-2025-001',
+    invoiceNumber: 'SMH-2025-001',
     date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     currency: '৳',
   });
 
   // 6. Modals
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isInsertModalOpen, setIsInsertModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
@@ -114,7 +129,7 @@ export function InventorySheet() {
   // Auto-save debounce timer ref
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Helper to renumber serials sequentially 1 to N
+  // Renumber helper
   const renumberProducts = (list: Product[]): Product[] => {
     return list.map((item, idx) => ({
       ...item,
@@ -128,7 +143,7 @@ export function InventorySheet() {
       const storedCatalog = localStorage.getItem(LOCAL_STORAGE_KEY);
       const storedOrders = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
       const storedMeta = localStorage.getItem(LOCAL_STORAGE_META_KEY);
-      const storedRole = localStorage.getItem(LOCAL_STORAGE_ROLE_KEY) as UserRole | null;
+      const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
 
       if (storedCatalog) {
         const parsed = JSON.parse(storedCatalog);
@@ -145,15 +160,17 @@ export function InventorySheet() {
         setMeta(JSON.parse(storedMeta));
       }
 
-      if (storedRole === 'admin' || storedRole === 'user') {
-        setRole(storedRole);
+      // Check for saved admin session
+      if (savedToken && savedToken.startsWith('admin_session_')) {
+        setAdminToken(savedToken);
+        setRole('admin');
       }
     } catch {
       console.warn('Could not read from localStorage');
     }
   }, []);
 
-  // Safe Debounced Auto-Save for Admin Changes
+  // Safe Debounced Auto-Save for Admin
   const triggerAutoSave = useCallback((newProducts: Product[], newMeta?: InvoiceMeta) => {
     setSaveStatus('unsaved');
 
@@ -178,8 +195,8 @@ export function InventorySheet() {
     }, 1200);
   }, []);
 
-  // Persist User Orders
-  const updateUserOrderQty = (productId: string, newQty: number) => {
+  // Persist User Order Qty
+  const updateUserOrderQty = useCallback((productId: string, newQty: number) => {
     setUserOrders(prev => {
       const updated = { ...prev, [productId]: Math.max(0, newQty) };
       try {
@@ -189,9 +206,8 @@ export function InventorySheet() {
       }
       return updated;
     });
-  };
+  }, []);
 
-  // Clear all user order quantities
   const handleClearOrder = () => {
     setUserOrders({});
     try {
@@ -201,17 +217,28 @@ export function InventorySheet() {
     }
   };
 
-  // Role toggle handler
-  const handleRoleChange = (newRole: UserRole) => {
-    setRole(newRole);
+  // Admin Authentication Callbacks
+  const handleAdminLoginSuccess = (token: string) => {
+    setAdminToken(token);
+    setRole('admin');
     try {
-      localStorage.setItem(LOCAL_STORAGE_ROLE_KEY, newRole);
+      localStorage.setItem(LOCAL_STORAGE_ADMIN_TOKEN, token);
     } catch {
       // ignore
     }
   };
 
-  // Manual Save (Admin)
+  const handleLogoutAdmin = () => {
+    setAdminToken(null);
+    setRole('user');
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Manual Save (Admin only)
   const handleManualSave = () => {
     if (role !== 'admin') return;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -221,29 +248,17 @@ export function InventorySheet() {
       localStorage.setItem(LOCAL_STORAGE_META_KEY, JSON.stringify(meta));
       setTimeout(() => {
         setSaveStatus('saved');
-      }, 350);
+      }, 300);
     } catch (err) {
       console.error('Manual save failed', err);
       setSaveStatus('error');
     }
   };
 
-  // Update Product fields (Admin only, server-authorized)
-  const handleUpdateProduct = async (id: string, updates: Partial<Product>) => {
+  // Update Product fields (Admin only, wrapped in useCallback to keep row memoization fast)
+  const handleUpdateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
     if (role !== 'admin') {
-      alert('Permission denied: Only Administrators can edit product information.');
-      return;
-    }
-
-    // Call server action to verify authorization
-    const serverResp = await authorizedUpdateProduct(role, id, {
-      name: updates.name,
-      price: updates.price,
-      stock: updates.stock,
-    });
-
-    if (!serverResp.success) {
-      alert(`Server error: ${serverResp.error}`);
+      alert('Permission denied: Only Administrator can edit products.');
       return;
     }
 
@@ -252,9 +267,15 @@ export function InventorySheet() {
       triggerAutoSave(next);
       return next;
     });
-  };
 
-  // Update Invoice Meta (Admin only)
+    // Background server validation
+    authorizedUpdateProduct(role, id, {
+      name: updates.name,
+      price: updates.price,
+      stock: updates.stock,
+    }).catch(console.error);
+  }, [role, triggerAutoSave]);
+
   const handleMetaChange = (updatedMeta: Partial<InvoiceMeta>) => {
     if (role !== 'admin') return;
     setMeta((prev) => {
@@ -264,10 +285,10 @@ export function InventorySheet() {
     });
   };
 
-  // Add a single blank product at the end (Admin only)
+  // Add a single blank product at end
   const handleAddProduct = async () => {
     if (role !== 'admin') {
-      alert('Permission denied: Only Administrators can add products.');
+      alert('Permission denied: Only Administrator can add products.');
       return;
     }
 
@@ -287,7 +308,7 @@ export function InventorySheet() {
     triggerAutoSave(next);
   };
 
-  // Insert product at any specific serial number (Admin only)
+  // Insert product at any specific serial number
   const handleInsertAtSerial = (
     targetSerial: number,
     name: string,
@@ -313,15 +334,14 @@ export function InventorySheet() {
     triggerAutoSave(finalized);
   };
 
-  const handleInsertAbove = (serialNumber: number) => {
+  const handleInsertAbove = useCallback((serialNumber: number) => {
     handleInsertAtSerial(serialNumber, '', 0, 0);
-  };
+  }, [products]);
 
-  const handleInsertBelow = (serialNumber: number) => {
+  const handleInsertBelow = useCallback((serialNumber: number) => {
     handleInsertAtSerial(serialNumber + 1, '', 0, 0);
-  };
+  }, [products]);
 
-  // Batch Add (Admin only)
   const handleBatchAdd = (names: string[]) => {
     if (role !== 'admin') return;
 
@@ -339,35 +359,35 @@ export function InventorySheet() {
     triggerAutoSave(next);
   };
 
-  // Reorder: Move Up (Admin only)
-  const handleMoveUp = (serialNumber: number) => {
+  const handleMoveUp = useCallback((serialNumber: number) => {
     if (role !== 'admin' || serialNumber <= 1) return;
-    const index = serialNumber - 1;
-    const nextList = [...products];
-    const temp = nextList[index];
-    nextList[index] = nextList[index - 1];
-    nextList[index - 1] = temp;
+    setProducts(prev => {
+      const index = serialNumber - 1;
+      const nextList = [...prev];
+      const temp = nextList[index];
+      nextList[index] = nextList[index - 1];
+      nextList[index - 1] = temp;
+      const finalized = renumberProducts(nextList);
+      triggerAutoSave(finalized);
+      return finalized;
+    });
+  }, [role, triggerAutoSave]);
 
-    const finalized = renumberProducts(nextList);
-    setProducts(finalized);
-    triggerAutoSave(finalized);
-  };
+  const handleMoveDown = useCallback((serialNumber: number) => {
+    if (role !== 'admin') return;
+    setProducts(prev => {
+      if (serialNumber >= prev.length) return prev;
+      const index = serialNumber - 1;
+      const nextList = [...prev];
+      const temp = nextList[index];
+      nextList[index] = nextList[index + 1];
+      nextList[index + 1] = temp;
+      const finalized = renumberProducts(nextList);
+      triggerAutoSave(finalized);
+      return finalized;
+    });
+  }, [role, triggerAutoSave]);
 
-  // Reorder: Move Down (Admin only)
-  const handleMoveDown = (serialNumber: number) => {
-    if (role !== 'admin' || serialNumber >= products.length) return;
-    const index = serialNumber - 1;
-    const nextList = [...products];
-    const temp = nextList[index];
-    nextList[index] = nextList[index + 1];
-    nextList[index + 1] = temp;
-
-    const finalized = renumberProducts(nextList);
-    setProducts(finalized);
-    triggerAutoSave(finalized);
-  };
-
-  // Delete product (Admin only)
   const confirmDeleteProduct = async () => {
     if (!productToDelete || role !== 'admin') return;
 
@@ -421,7 +441,6 @@ export function InventorySheet() {
   };
 
   // 7. ROLE-BASED CALCULATIONS
-  // Admin Statistics: Inventory valuation = Price * Stock
   const adminStats: AdminInventoryStats = useMemo(() => {
     let totalStock = 0;
     let outOfStockCount = 0;
@@ -444,7 +463,6 @@ export function InventorySheet() {
     };
   }, [products]);
 
-  // User Order Statistics: Item Amount = Price * Ordered Qty, Grand Total = Sum(Price * Ordered Qty)
   const userStats: UserOrderStats = useMemo(() => {
     let totalOrderedItems = 0;
     let totalOrderedUnits = 0;
@@ -489,7 +507,6 @@ export function InventorySheet() {
     });
   }, [products, searchQuery, filter, userOrders]);
 
-  // Filter counts for badges
   const filterCounts = useMemo(() => {
     let inStock = 0;
     let outOfStock = 0;
@@ -521,10 +538,12 @@ export function InventorySheet() {
 
   return (
     <div className="min-h-screen bg-slate-100/70 pb-16">
-      {/* 1. Header with Role Switcher */}
+      {/* 1. Header with Shondani Medical Hall branding & Role Switcher */}
       <InventoryHeader
         role={role}
-        onRoleChange={handleRoleChange}
+        onRoleChange={setRole}
+        onOpenAdminLogin={() => setIsLoginModalOpen(true)}
+        onLogoutAdmin={handleLogoutAdmin}
         meta={meta}
         onMetaChange={handleMetaChange}
         saveStatus={saveStatus}
@@ -541,8 +560,8 @@ export function InventorySheet() {
         onClearOrder={handleClearOrder}
       />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
-        {/* 2. Key Metrics Summary Dashboard (Role Specific) */}
+      <main className="max-w-7xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-3 sm:space-y-5">
+        {/* 2. Key Metrics Summary Dashboard */}
         <InventorySummary 
           role={role}
           adminStats={adminStats} 
@@ -550,7 +569,7 @@ export function InventorySheet() {
           currency={meta.currency} 
         />
 
-        {/* 3. Search and Filter Bar */}
+        {/* 3. Search and Filter Bar (Optimized for fast mobile typing) */}
         <SearchAndFilterBar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -563,44 +582,42 @@ export function InventorySheet() {
           needOrderCount={filterCounts.needOrder}
         />
 
-        {/* 4. Main Invoice / Inventory Container */}
+        {/* 4. Main Responsive Table Sheet (UNIFIED TABLE LAYOUT FOR MOBILE & DESKTOP) */}
         <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
           {/* Banner */}
-          <div className={`px-5 py-3.5 border-b flex flex-wrap items-center justify-between gap-2 ${
-            isAdmin ? 'bg-amber-50/40 border-amber-200/60' : 'bg-indigo-50/40 border-indigo-200/60'
+          <div className={`px-3 sm:px-5 py-2.5 sm:py-3 border-b flex flex-wrap items-center justify-between gap-2 ${
+            isAdmin ? 'bg-amber-50/50 border-amber-200/60' : 'bg-indigo-50/50 border-indigo-200/60'
           }`}>
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                {isAdmin ? 'ADMIN INVENTORY LEDGER' : 'CUSTOMER ORDER SHEET'} • {filteredProducts.length} OF {products.length} PRODUCTS
+              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700">
+                {isAdmin ? 'SHONDANI ADMIN INVENTORY' : 'SHONDANI PRODUCT ORDER SHEET'} • {filteredProducts.length} OF {products.length} PRODUCTS
               </span>
             </div>
-            <div className="text-xs text-slate-500 flex items-center gap-3">
-              {isAdmin ? (
-                <span>Manage stock & edit products directly</span>
-              ) : (
-                <span>Amount = Price × Ordered Quantity • Live Grand Total</span>
-              )}
+            <div className="text-[11px] sm:text-xs text-slate-500 flex items-center gap-2 sm:gap-3">
+              <span>Swipe horizontally to view all columns</span>
+              <span>•</span>
+              <span>{isAdmin ? 'Value = Price × Stock' : 'Amount = Price × Order Qty'}</span>
             </div>
           </div>
 
           {products.length === 0 ? (
             /* Empty State */
-            <div className="py-16 px-4 text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <PackageIcon className="w-8 h-8" />
+            <div className="py-12 px-4 text-center">
+              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <PackageIcon className="w-7 h-7" />
               </div>
-              <h3 className="text-lg font-bold text-slate-800">No products available</h3>
-              <p className="mt-1 text-sm text-slate-500 max-w-sm mx-auto">
+              <h3 className="text-base sm:text-lg font-bold text-slate-800">No products available</h3>
+              <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
                 {isAdmin 
-                  ? 'Add your first product to begin managing inventory.' 
-                  : 'The store has not added any products yet. Please check back later.'}
+                  ? 'Add your first product to Shondani Medical Hall inventory.' 
+                  : 'Products will appear here once added by the administrator.'}
               </p>
               {isAdmin && (
-                <div className="mt-6 flex items-center justify-center gap-3">
+                <div className="mt-4 flex items-center justify-center gap-3">
                   <button
                     type="button"
                     onClick={handleAddProduct}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs cursor-pointer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-amber-500 hover:bg-amber-600 rounded-lg shadow-xs cursor-pointer"
                   >
                     <PlusIcon className="w-4 h-4" />
                     + Add First Product
@@ -609,172 +626,138 @@ export function InventorySheet() {
               )}
             </div>
           ) : (
-            <>
-              {/* Desktop Table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                      <th className="py-3 px-3 text-center w-12">#</th>
-                      <th className="py-3 px-3 min-w-[200px]">Product Name</th>
-                      <th className="py-3 px-3 w-28 text-right">Price ({meta.currency})</th>
-                      <th className="py-3 px-3 w-36 text-center">
-                        {isAdmin ? 'Warehouse Stock' : 'Stock Availability'}
-                      </th>
-                      <th className="py-3 px-3 w-36 text-center">
-                        {isAdmin ? 'Re-order Benchmark' : 'Order Qty'}
-                      </th>
-                      <th className="py-3 px-3 w-32 text-right">
-                        {isAdmin ? `Stock Value (${meta.currency})` : `Amount (${meta.currency})`}
-                      </th>
-                      <th className="py-3 px-3 w-40 text-right">
-                        {isAdmin ? 'Actions' : 'Status'}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredProducts.map((product, idx) => (
-                      <InventoryRow
-                        key={product._id}
-                        product={product}
-                        index={idx}
-                        totalProducts={products.length}
-                        role={role}
-                        currency={meta.currency}
-                        userOrderQty={userOrders[product._id] || 0}
-                        onUserOrderQtyChange={updateUserOrderQty}
-                        onUpdate={handleUpdateProduct}
-                        onInsertAbove={handleInsertAbove}
-                        onInsertBelow={handleInsertBelow}
-                        onMoveUp={handleMoveUp}
-                        onMoveDown={handleMoveDown}
-                        onDeleteRequest={setProductToDelete}
-                      />
-                    ))}
-                  </tbody>
-                  {/* Table Footer with Exact Grand Total */}
-                  <tfoot>
-                    <tr className="bg-slate-50 border-t-2 border-slate-300">
-                      <td colSpan={2} className="py-3.5 px-4">
-                        {isAdmin ? (
-                          <button
-                            type="button"
-                            onClick={handleAddProduct}
-                            className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 hover:text-amber-900 cursor-pointer"
-                          >
-                            <PlusIcon className="w-3.5 h-3.5" />
-                            <span>+ Add Another Product</span>
-                          </button>
-                        ) : (
-                          <span className="text-xs font-semibold text-slate-500">
-                            Adjust quantities above to calculate your total
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-3 text-right text-xs font-bold text-slate-600 uppercase">
-                        Grand Total:
-                      </td>
-                      <td className="py-3 px-3 text-center text-xs font-bold text-slate-800">
-                        {isAdmin ? `${adminStats.totalStock.toLocaleString()} units` : '—'}
-                      </td>
-                      <td className="py-3 px-3 text-center text-xs font-bold text-indigo-700">
-                        {isAdmin ? '—' : `${userStats.totalOrderedUnits.toLocaleString()} units`}
-                      </td>
-                      <td className="py-3 px-3 text-right text-base font-black text-indigo-950">
-                        {meta.currency}{isAdmin 
-                          ? adminStats.totalInventoryValue.toLocaleString() 
-                          : userStats.grandTotal.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        {!isAdmin && userStats.totalOrderedItems > 0 && (
-                          <button
-                            type="button"
-                            onClick={handlePlaceOrder}
-                            className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer"
-                          >
-                            Place Order
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* Mobile Card View */}
-              <div className="md:hidden p-3 space-y-3 bg-slate-50/50">
-                {filteredProducts.map((product) => (
-                  <MobileInventoryCard
-                    key={product._id}
-                    product={product}
-                    totalProducts={products.length}
-                    role={role}
-                    currency={meta.currency}
-                    userOrderQty={userOrders[product._id] || 0}
-                    onUserOrderQtyChange={updateUserOrderQty}
-                    onUpdate={handleUpdateProduct}
-                    onInsertAbove={handleInsertAbove}
-                    onInsertBelow={handleInsertBelow}
-                    onMoveUp={handleMoveUp}
-                    onMoveDown={handleMoveDown}
-                    onDeleteRequest={setProductToDelete}
-                  />
-                ))}
-
-                {/* Mobile Bottom Action Button */}
-                <div className="pt-2">
-                  {isAdmin ? (
-                    <button
-                      type="button"
-                      onClick={handleAddProduct}
-                      className="w-full py-3 flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-sm rounded-xl shadow-xs cursor-pointer"
-                    >
-                      <PlusIcon className="w-4 h-4" />
-                      + Add New Product
-                    </button>
-                  ) : (
-                    userStats.totalOrderedItems > 0 && (
-                      <button
-                        type="button"
-                        onClick={handlePlaceOrder}
-                        className="w-full py-3 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-xs cursor-pointer"
-                      >
-                        <ShoppingCartIcon className="w-4 h-4" />
-                        Place Order ({meta.currency}{userStats.grandTotal.toLocaleString()})
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-
-              {/* Bottom Summary Bar */}
-              <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs text-slate-600">
-                  Showing <span className="font-bold text-slate-900">{filteredProducts.length}</span> products
-                  {!isAdmin && userStats.totalOrderedItems > 0 && (
-                    <span className="ml-2 text-indigo-700 font-semibold">
-                      ({userStats.totalOrderedItems} items selected in order)
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="font-bold text-slate-600 uppercase text-xs tracking-wider">
-                    {isAdmin ? 'Inventory Value:' : 'Order Grand Total:'}
-                  </span>
-                  <span className="text-xl font-black text-indigo-700">
-                    {meta.currency}{isAdmin 
-                      ? adminStats.totalInventoryValue.toLocaleString() 
-                      : userStats.grandTotal.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </>
+            /* UNIFIED SIDE-BY-SIDE RESPONSIVE TABLE FOR MOBILE & DESKTOP */
+            <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
+              <table className="w-full text-left border-collapse min-w-[620px] sm:min-w-[760px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    <th className="py-2.5 px-1.5 sm:px-2.5 text-center w-9 sm:w-12 sticky left-0 z-20 bg-slate-50 border-r border-slate-200">
+                      #
+                    </th>
+                    <th className="py-2.5 px-1.5 sm:px-3 min-w-[130px] sm:min-w-[200px]">
+                      Product Name
+                    </th>
+                    <th className="py-2.5 px-1 sm:px-2.5 w-20 sm:w-28 text-right">
+                      Price ({meta.currency})
+                    </th>
+                    <th className="py-2.5 px-1 sm:px-2.5 w-28 sm:w-36 text-center">
+                      {isAdmin ? 'Warehouse Stock' : 'Stock'}
+                    </th>
+                    <th className="py-2.5 px-1 sm:px-2.5 w-28 sm:w-36 text-center">
+                      {isAdmin ? 'Target Qty' : 'Order Qty'}
+                    </th>
+                    <th className="py-2.5 px-1.5 sm:px-3 w-24 sm:w-32 text-right">
+                      {isAdmin ? `Stock Value (${meta.currency})` : `Amount (${meta.currency})`}
+                    </th>
+                    <th className="py-2.5 px-1 sm:px-2.5 w-24 sm:w-36 text-right">
+                      {isAdmin ? 'Actions' : 'Status'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProducts.map((product, idx) => (
+                    <InventoryRow
+                      key={product._id}
+                      product={product}
+                      index={idx}
+                      totalProducts={products.length}
+                      role={role}
+                      currency={meta.currency}
+                      userOrderQty={userOrders[product._id] || 0}
+                      onUserOrderQtyChange={updateUserOrderQty}
+                      onUpdate={handleUpdateProduct}
+                      onInsertAbove={handleInsertAbove}
+                      onInsertBelow={handleInsertBelow}
+                      onMoveUp={handleMoveUp}
+                      onMoveDown={handleMoveDown}
+                      onDeleteRequest={setProductToDelete}
+                    />
+                  ))}
+                </tbody>
+                {/* Table Footer with Exact Grand Total */}
+                <tfoot>
+                  <tr className="bg-slate-50 border-t-2 border-slate-300">
+                    <td colSpan={2} className="py-3 px-3 sm:px-4 sticky left-0 z-10 bg-slate-50">
+                      {isAdmin ? (
+                        <button
+                          type="button"
+                          onClick={handleAddProduct}
+                          className="flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-950 cursor-pointer"
+                        >
+                          <PlusIcon className="w-3.5 h-3.5" />
+                          <span>+ Add Another Product</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] sm:text-xs font-semibold text-slate-500">
+                          Total calculated live:
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-1 sm:px-2.5 text-right text-xs font-bold text-slate-600 uppercase">
+                      Grand Total:
+                    </td>
+                    <td className="py-3 px-1 sm:px-2.5 text-center text-xs font-bold text-slate-800">
+                      {isAdmin ? `${adminStats.totalStock.toLocaleString()} units` : '—'}
+                    </td>
+                    <td className="py-3 px-1 sm:px-2.5 text-center text-xs font-bold text-indigo-700">
+                      {isAdmin ? '—' : `${userStats.totalOrderedUnits.toLocaleString()} units`}
+                    </td>
+                    <td className="py-3 px-1.5 sm:px-3 text-right text-sm sm:text-base font-black text-indigo-950">
+                      {meta.currency}{isAdmin 
+                        ? adminStats.totalInventoryValue.toLocaleString() 
+                        : userStats.grandTotal.toLocaleString()}
+                    </td>
+                    <td className="py-3 px-1 sm:px-2.5 text-right">
+                      {!isAdmin && userStats.totalOrderedItems > 0 && (
+                        <button
+                          type="button"
+                          onClick={handlePlaceOrder}
+                          className="px-2.5 sm:px-3 py-1 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer"
+                        >
+                          Place Order
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )}
+
+          {/* Bottom Summary Bar */}
+          <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
+            <div className="text-xs text-slate-600">
+              Showing <span className="font-bold text-slate-900">{filteredProducts.length}</span> products
+              {!isAdmin && userStats.totalOrderedItems > 0 && (
+                <span className="ml-2 text-indigo-700 font-bold">
+                  ({userStats.totalOrderedItems} items selected in order)
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 text-sm">
+              <span className="font-bold text-slate-600 uppercase text-xs tracking-wider">
+                {isAdmin ? 'Total Inventory Value:' : 'Grand Total:'}
+              </span>
+              <span className="text-lg sm:text-xl font-black text-indigo-700">
+                {meta.currency}{isAdmin 
+                  ? adminStats.totalInventoryValue.toLocaleString() 
+                  : userStats.grandTotal.toLocaleString()}
+              </span>
+            </div>
+          </div>
         </div>
       </main>
 
       {/* 5. Modals & Dialogs */}
+      {/* Admin Login Modal (omar / Omar88067) */}
+      <AdminLoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={handleAdminLoginSuccess}
+      />
+
+      {/* Admin Operations Modals */}
       {isAdmin && (
         <>
           <QuickBatchAddModal
@@ -792,7 +775,7 @@ export function InventorySheet() {
 
           <ConfirmDialog
             isOpen={productToDelete !== null}
-            title="Delete Product?"
+            title="Delete Product from Shondani?"
             message={`Are you sure you want to delete "${productToDelete?.name || 'this product'}" (Serial #${productToDelete?.serialNumber})? All subsequent products will automatically move up by one serial number.`}
             confirmText="Delete Product"
             cancelText="Keep Product"

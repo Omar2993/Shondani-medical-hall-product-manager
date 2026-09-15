@@ -8,6 +8,39 @@ export interface ActionResponse<T = unknown> {
   error?: string;
 }
 
+// Configured Admin Credentials
+const ADMIN_USERNAME = 'omar';
+const ADMIN_PASSWORD = 'Omar88067';
+
+/**
+ * Verifies admin credentials securely on the server.
+ */
+export async function verifyAdminCredentials(
+  username: string,
+  password: string
+): Promise<ActionResponse<{ role: UserRole; token: string }>> {
+  if (!username || !password) {
+    return { success: false, error: 'Username and password are required.' };
+  }
+
+  if (username.trim() === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    // Generate a secure session token
+    const token = 'admin_session_' + Buffer.from(`${username}:${Date.now()}`).toString('base64');
+    return {
+      success: true,
+      data: {
+        role: 'admin',
+        token,
+      },
+    };
+  }
+
+  return {
+    success: false,
+    error: 'Invalid admin username or password. Access denied.',
+  };
+}
+
 /**
  * Server-side authorization check.
  * Strictly prevents normal users from calling admin mutation procedures.
@@ -32,10 +65,9 @@ export async function authorizedAddProduct(
       return { success: false, error: 'Product name is required.' };
     }
 
-    // In-memory / DB representation
     const newProduct: Product = {
       _id: 'prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      serialNumber: 1, // dynamically calculated by parent or DB
+      serialNumber: 1,
       name: productData.name.trim(),
       price: Math.max(0, productData.price || 0),
       stock: Math.max(0, productData.stock || 0),
@@ -65,7 +97,6 @@ export async function authorizedUpdateProduct(
       return { success: false, error: 'Product ID is required.' };
     }
 
-    // Sanitize updates
     const sanitized: typeof updates = {};
     if (updates.name !== undefined) sanitized.name = updates.name.trim();
     if (updates.price !== undefined) sanitized.price = Math.max(0, updates.price);
@@ -93,27 +124,6 @@ export async function authorizedDeleteProduct(
     }
 
     return { success: true, data: { deletedId: productId } };
-  } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : 'Unauthorized access';
-    return { success: false, error: errorMsg };
-  }
-}
-
-/**
- * Authorized Product Reordering
- */
-export async function authorizedReorderProducts(
-  role: UserRole,
-  orderedIds: string[]
-): Promise<ActionResponse<{ orderedIds: string[] }>> {
-  try {
-    assertAdminRole(role);
-
-    if (!Array.isArray(orderedIds)) {
-      return { success: false, error: 'Invalid reorder array.' };
-    }
-
-    return { success: true, data: { orderedIds } };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Unauthorized access';
     return { success: false, error: errorMsg };
