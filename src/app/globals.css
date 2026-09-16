@@ -29,12 +29,22 @@ input[type="number"] {
   }
 
   @page {
-    margin: 1cm;
+    margin: 10mm;
     size: A4 portrait;
   }
 
   /* Prevent page breaks inside invoice rows */
   tr {
-    page-break-inside: avoid;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
   }
 }
+

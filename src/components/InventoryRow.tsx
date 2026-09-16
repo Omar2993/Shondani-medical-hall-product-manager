@@ -28,7 +28,7 @@ interface InventoryRowProps {
 
 export const InventoryRow = memo(function InventoryRow({
   product,
-  index,
+  index: _index,
   totalProducts,
   role,
   currency = '৳',
@@ -148,13 +148,13 @@ export const InventoryRow = memo(function InventoryRow({
     <tr className={`border-b border-slate-200 transition-colors group ${
       !isAdmin && currentOrder > 0 ? 'bg-indigo-50/50 hover:bg-indigo-50/80' : 'hover:bg-slate-50/70'
     }`}>
-      {/* 1. Sticky Serial Number Column */}
-      <td className="py-2 px-1.5 sm:px-2.5 text-center text-xs font-bold text-slate-500 bg-white/95 sticky left-0 z-10 border-r border-slate-200 shadow-xs w-9 sm:w-12 select-none">
+      {/* 1. Serial Number Column - Hidden on mobile, visible on desktop */}
+      <td className="hidden sm:table-cell py-1.5 px-1 sm:px-2 text-center text-xs font-bold text-slate-500 bg-white/95 sm:sticky left-0 z-10 border-r border-slate-200 select-none w-9 sm:w-12">
         {product.serialNumber}
       </td>
 
-      {/* 2. Product Name */}
-      <td className="py-1.5 px-1.5 sm:px-3 min-w-[130px] sm:min-w-[200px]">
+      {/* 2. Product Name - Flexible width, multiline natural wrapping */}
+      <td className="py-1 px-1.5 sm:px-2.5 min-w-[120px] sm:min-w-[180px]">
         {isAdmin ? (
           <input
             type="text"
@@ -162,25 +162,22 @@ export const InventoryRow = memo(function InventoryRow({
             onChange={(e) => handleNameChange(e.target.value)}
             onBlur={() => onUpdate(product._id, { name: localName })}
             placeholder="Product Name..."
-            className="w-full px-2 py-1 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-none transition-all placeholder-slate-400"
+            className="w-full px-1.5 py-1 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-none transition-all placeholder-slate-400"
           />
         ) : (
-          <div className="py-1 px-1.5">
-            <span className="text-xs sm:text-sm font-bold text-slate-900 block truncate max-w-[160px] sm:max-w-none">
+          <div className="py-0.5 px-0.5">
+            <span className="text-xs sm:text-sm font-bold text-slate-900 block break-words whitespace-normal leading-snug">
               {product.name || 'Untitled Product'}
-            </span>
-            <span className="text-[10px] sm:text-xs text-slate-500">
-              {currency}{currentPrice.toLocaleString()}
             </span>
           </div>
         )}
       </td>
 
       {/* 3. Price Column */}
-      <td className="py-1.5 px-1 sm:px-2.5 w-20 sm:w-28 text-right">
+      <td className="py-1 px-1 sm:px-2 w-16 sm:w-24 text-right">
         {isAdmin ? (
           <div className="relative flex items-center justify-end">
-            <span className="text-[10px] sm:text-xs text-slate-400 font-semibold mr-1 select-none">
+            <span className="text-[10px] sm:text-xs text-slate-400 font-semibold mr-0.5 select-none">
               {currency}
             </span>
             <input
@@ -194,18 +191,18 @@ export const InventoryRow = memo(function InventoryRow({
                 onUpdate(product._id, { price: num });
               }}
               placeholder="0"
-              className="w-14 sm:w-20 text-right px-1.5 py-1 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:outline-none"
+              className="w-12 sm:w-18 text-right px-1 py-0.5 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:outline-none"
             />
           </div>
         ) : (
-          <div className="text-right py-1 pr-1 font-bold text-xs sm:text-sm text-slate-800">
+          <div className="text-right py-0.5 pr-0.5 font-bold text-xs sm:text-sm text-slate-800">
             {currency}{currentPrice.toLocaleString()}
           </div>
         )}
       </td>
 
       {/* 4. Warehouse Stock Column */}
-      <td className="py-1.5 px-1 sm:px-2.5 w-28 sm:w-36 text-center">
+      <td className="py-1 px-1 sm:px-2 w-20 sm:w-28 text-center">
         {isAdmin ? (
           /* Admin Stock Steppers + Input */
           <div className="inline-flex items-center justify-center bg-slate-100/90 rounded-md p-0.5 border border-slate-200">
@@ -228,7 +225,7 @@ export const InventoryRow = memo(function InventoryRow({
                 onUpdate(product._id, { stock: num });
               }}
               placeholder="0"
-              className="w-8 sm:w-11 text-center text-xs sm:text-sm font-bold text-slate-800 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
+              className="w-7 sm:w-10 text-center text-xs sm:text-sm font-bold text-slate-800 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
             />
             <button
               type="button"
@@ -243,11 +240,11 @@ export const InventoryRow = memo(function InventoryRow({
           /* Normal User Read-Only Stock */
           <div className="flex items-center justify-center">
             {currentStock > 0 ? (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {currentStock} in stock
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+                {currentStock} <span className="hidden sm:inline ml-0.5">in stock</span>
               </span>
             ) : (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
                 Out
               </span>
             )}
@@ -256,7 +253,7 @@ export const InventoryRow = memo(function InventoryRow({
       </td>
 
       {/* 5. Order Quantity Column */}
-      <td className="py-1.5 px-1 sm:px-2.5 w-28 sm:w-36 text-center">
+      <td className="py-1 px-1 sm:px-2 w-24 sm:w-32 text-center">
         {isAdmin ? (
           <div className="text-center text-[10px] sm:text-xs font-medium text-slate-400">
             {product.orderQuantity ? `${product.orderQuantity} target` : '—'}
@@ -283,7 +280,7 @@ export const InventoryRow = memo(function InventoryRow({
                 onUserOrderQtyChange(product._id, num);
               }}
               placeholder="0"
-              className="w-8 sm:w-11 text-center text-xs sm:text-sm font-extrabold text-indigo-950 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
+              className="w-7 sm:w-10 text-center text-xs sm:text-sm font-extrabold text-indigo-950 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
             />
             <button
               type="button"
@@ -298,14 +295,14 @@ export const InventoryRow = memo(function InventoryRow({
       </td>
 
       {/* 6. Amount Column */}
-      <td className="py-2 px-1.5 sm:px-3 text-right text-xs sm:text-sm font-extrabold w-24 sm:w-32 bg-slate-50/40">
+      <td className="py-1.5 px-1 sm:px-2.5 text-right text-xs sm:text-sm font-extrabold w-20 sm:w-28 bg-slate-50/40">
         <span className={!isAdmin && currentOrder > 0 ? 'text-indigo-700 font-black' : 'text-slate-800'}>
           {currency}{rowAmount.toLocaleString()}
         </span>
       </td>
 
-      {/* 7. Actions Column */}
-      <td className="py-1.5 px-1 sm:px-2.5 w-24 sm:w-36 text-right">
+      {/* 7. Actions / Status Column - Status hidden on mobile for User */}
+      <td className={`py-1 px-1 sm:px-2 text-right ${isAdmin ? 'w-20 sm:w-32' : 'hidden sm:table-cell w-16 sm:w-24'}`}>
         {isAdmin ? (
           <div className="flex items-center justify-end gap-0.5 sm:gap-1">
             <button
@@ -369,7 +366,7 @@ export const InventoryRow = memo(function InventoryRow({
                 Clear
               </button>
             ) : (
-              <span className="text-xs text-slate-300 select-none pr-2">—</span>
+              <span className="text-xs text-slate-300 select-none pr-1">—</span>
             )}
           </div>
         )}

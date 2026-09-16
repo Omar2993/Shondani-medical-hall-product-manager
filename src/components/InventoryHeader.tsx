@@ -52,7 +52,7 @@ export function InventoryHeader({
   onOpenInsertModal,
   onDownloadPdf,
   onPrintSheet,
-  totalProducts,
+  totalProducts: _totalProducts,
   userOrderCount,
   userGrandTotal,
   onPlaceOrder,

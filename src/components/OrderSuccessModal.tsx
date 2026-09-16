@@ -1,12 +1,12 @@
 'use client';
 
 import React from 'react';
-import { CheckIcon, XIcon, DownloadIcon } from './icons';
+import { CheckIcon, DownloadIcon } from './icons';
 
 interface OrderSuccessModalProps {
   isOpen: boolean;
   orderId: string;
-  customerName: string;
+  customerName?: string;
   items: Array<{ name: string; price: number; quantity: number; amount: number }>;
   grandTotal: number;
   currency?: string;
@@ -17,7 +17,7 @@ interface OrderSuccessModalProps {
 export function OrderSuccessModal({
   isOpen,
   orderId,
-  customerName,
+  customerName: _customerName,
   items,
   grandTotal,
   currency = '৳',

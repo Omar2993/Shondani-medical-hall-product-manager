@@ -20,6 +20,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { AdminLoginModal } from './AdminLoginModal';
 import { OrderSuccessModal } from './OrderSuccessModal';
 import { PrintableInvoice } from './PrintableInvoice';
+import { generateInvoicePdf } from '@/utils/invoicePdfGenerator';
 import { PlusIcon, PackageIcon } from './icons';
 import { 
   authorizedAddProduct, 
@@ -89,7 +90,7 @@ const LOCAL_STORAGE_ADMIN_TOKEN = 'shondani_admin_token_v3';
 export function InventorySheet() {
   // 1. Role State: Default to 'user' so customers cannot see admin controls without authenticating
   const [role, setRole] = useState<UserRole>('user');
-  const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [_adminToken, setAdminToken] = useState<string | null>(null);
 
   // 2. Master Product Catalog (Managed exclusively by Admin)
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -139,35 +140,37 @@ export function InventorySheet() {
 
   // Load saved state on client mount
   useEffect(() => {
-    try {
-      const storedCatalog = localStorage.getItem(LOCAL_STORAGE_KEY);
-      const storedOrders = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
-      const storedMeta = localStorage.getItem(LOCAL_STORAGE_META_KEY);
-      const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
+    queueMicrotask(() => {
+      try {
+        const storedCatalog = localStorage.getItem(LOCAL_STORAGE_KEY);
+        const storedOrders = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
+        const storedMeta = localStorage.getItem(LOCAL_STORAGE_META_KEY);
+        const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
 
-      if (storedCatalog) {
-        const parsed = JSON.parse(storedCatalog);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setProducts(renumberProducts(parsed));
+        if (storedCatalog) {
+          const parsed = JSON.parse(storedCatalog);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setProducts(renumberProducts(parsed));
+          }
         }
-      }
 
-      if (storedOrders) {
-        setUserOrders(JSON.parse(storedOrders));
-      }
+        if (storedOrders) {
+          setUserOrders(JSON.parse(storedOrders));
+        }
 
-      if (storedMeta) {
-        setMeta(JSON.parse(storedMeta));
-      }
+        if (storedMeta) {
+          setMeta(JSON.parse(storedMeta));
+        }
 
-      // Check for saved admin session
-      if (savedToken && savedToken.startsWith('admin_session_')) {
-        setAdminToken(savedToken);
-        setRole('admin');
+        // Check for saved admin session
+        if (savedToken && savedToken.startsWith('admin_session_')) {
+          setAdminToken(savedToken);
+          setRole('admin');
+        }
+      } catch {
+        console.warn('Could not read from localStorage');
       }
-    } catch {
-      console.warn('Could not read from localStorage');
-    }
+    });
   }, []);
 
   // Safe Debounced Auto-Save for Admin
@@ -309,7 +312,7 @@ export function InventorySheet() {
   };
 
   // Insert product at any specific serial number
-  const handleInsertAtSerial = (
+  const handleInsertAtSerial = useCallback((
     targetSerial: number,
     name: string,
     price: number = 0,
@@ -325,22 +328,23 @@ export function InventorySheet() {
       stock,
     };
 
-    const targetIndex = Math.max(0, Math.min(targetSerial - 1, products.length));
-    const nextList = [...products];
-    nextList.splice(targetIndex, 0, newProduct);
-
-    const finalized = renumberProducts(nextList);
-    setProducts(finalized);
-    triggerAutoSave(finalized);
-  };
+    setProducts(prev => {
+      const targetIndex = Math.max(0, Math.min(targetSerial - 1, prev.length));
+      const nextList = [...prev];
+      nextList.splice(targetIndex, 0, newProduct);
+      const finalized = renumberProducts(nextList);
+      triggerAutoSave(finalized);
+      return finalized;
+    });
+  }, [role, triggerAutoSave]);
 
   const handleInsertAbove = useCallback((serialNumber: number) => {
     handleInsertAtSerial(serialNumber, '', 0, 0);
-  }, [products]);
+  }, [handleInsertAtSerial]);
 
   const handleInsertBelow = useCallback((serialNumber: number) => {
     handleInsertAtSerial(serialNumber + 1, '', 0, 0);
-  }, [products]);
+  }, [handleInsertAtSerial]);
 
   const handleBatchAdd = (names: string[]) => {
     if (role !== 'admin') return;
@@ -527,276 +531,299 @@ export function InventorySheet() {
   }, [products, userOrders]);
 
   const handlePrintSheet = () => {
+    const count = isAdmin ? products.filter(p => (p.stock || 0) > 0).length : userStats.totalOrderedItems;
+    if (count === 0) {
+      alert('No products to invoice. Please order or select at least one product before printing.');
+      return;
+    }
     window.print();
   };
 
   const handleDownloadPdf = () => {
-    window.print();
+    const count = isAdmin ? products.filter(p => (p.stock || 0) > 0).length : userStats.totalOrderedItems;
+    if (count === 0) {
+      alert('No products to invoice. Please order or select at least one product before generating an invoice.');
+      return;
+    }
+
+    const res = generateInvoicePdf({
+      products,
+      meta,
+      role,
+      userOrders,
+      customerName: 'Customer User',
+      autoDownload: true,
+    });
+
+    if (!res.success) {
+      alert(res.message || res.error || 'No products to invoice');
+    }
   };
 
   const isAdmin = role === 'admin';
 
   return (
-    <div className="min-h-screen bg-slate-100/70 pb-16">
-      {/* 1. Header with Shondani Medical Hall branding & Role Switcher */}
-      <InventoryHeader
-        role={role}
-        onRoleChange={setRole}
-        onOpenAdminLogin={() => setIsLoginModalOpen(true)}
-        onLogoutAdmin={handleLogoutAdmin}
-        meta={meta}
-        onMetaChange={handleMetaChange}
-        saveStatus={saveStatus}
-        onManualSave={handleManualSave}
-        onAddProduct={handleAddProduct}
-        onOpenBatchModal={() => setIsBatchModalOpen(true)}
-        onOpenInsertModal={() => setIsInsertModalOpen(true)}
-        onDownloadPdf={handleDownloadPdf}
-        onPrintSheet={handlePrintSheet}
-        totalProducts={products.length}
-        userOrderCount={userStats.totalOrderedItems}
-        userGrandTotal={userStats.grandTotal}
-        onPlaceOrder={handlePlaceOrder}
-        onClearOrder={handleClearOrder}
-      />
-
-      <main className="max-w-7xl mx-auto px-2 sm:px-6 py-4 sm:py-6 space-y-3 sm:space-y-5">
-        {/* 2. Key Metrics Summary Dashboard */}
-        <InventorySummary 
+    <div className="min-h-screen bg-slate-100/70 pb-12">
+      <div className="print:hidden">
+        {/* 1. Header with Shondani Medical Hall branding & Role Switcher */}
+        <InventoryHeader
           role={role}
-          adminStats={adminStats} 
-          userStats={userStats} 
-          currency={meta.currency} 
+          onRoleChange={setRole}
+          onOpenAdminLogin={() => setIsLoginModalOpen(true)}
+          onLogoutAdmin={handleLogoutAdmin}
+          meta={meta}
+          onMetaChange={handleMetaChange}
+          saveStatus={saveStatus}
+          onManualSave={handleManualSave}
+          onAddProduct={handleAddProduct}
+          onOpenBatchModal={() => setIsBatchModalOpen(true)}
+          onOpenInsertModal={() => setIsInsertModalOpen(true)}
+          onDownloadPdf={handleDownloadPdf}
+          onPrintSheet={handlePrintSheet}
+          totalProducts={products.length}
+          userOrderCount={userStats.totalOrderedItems}
+          userGrandTotal={userStats.grandTotal}
+          onPlaceOrder={handlePlaceOrder}
+          onClearOrder={handleClearOrder}
         />
 
-        {/* 3. Search and Filter Bar (Optimized for fast mobile typing) */}
-        <SearchAndFilterBar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          filter={filter}
-          onFilterChange={setFilter}
-          totalCount={filterCounts.all}
-          filteredCount={filteredProducts.length}
-          inStockCount={filterCounts.inStock}
-          outOfStockCount={filterCounts.outOfStock}
-          needOrderCount={filterCounts.needOrder}
-        />
+        <main className="max-w-7xl mx-auto px-2 sm:px-4 py-2.5 sm:py-4 space-y-2.5 sm:space-y-4">
+          {/* 2. Key Metrics Summary Dashboard */}
+          <InventorySummary 
+            role={role}
+            adminStats={adminStats} 
+            userStats={userStats} 
+            currency={meta.currency} 
+          />
 
-        {/* 4. Main Responsive Table Sheet (UNIFIED TABLE LAYOUT FOR MOBILE & DESKTOP) */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
-          {/* Banner */}
-          <div className={`px-3 sm:px-5 py-2.5 sm:py-3 border-b flex flex-wrap items-center justify-between gap-2 ${
-            isAdmin ? 'bg-amber-50/50 border-amber-200/60' : 'bg-indigo-50/50 border-indigo-200/60'
-          }`}>
-            <div>
-              <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700">
-                {isAdmin ? 'SHONDANI ADMIN INVENTORY' : 'SHONDANI PRODUCT ORDER SHEET'} • {filteredProducts.length} OF {products.length} PRODUCTS
-              </span>
-            </div>
-            <div className="text-[11px] sm:text-xs text-slate-500 flex items-center gap-2 sm:gap-3">
-              <span>Swipe horizontally to view all columns</span>
-              <span>•</span>
-              <span>{isAdmin ? 'Value = Price × Stock' : 'Amount = Price × Order Qty'}</span>
-            </div>
-          </div>
+          {/* 3. Search and Filter Bar (Optimized for fast mobile typing) */}
+          <SearchAndFilterBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            filter={filter}
+            onFilterChange={setFilter}
+            totalCount={filterCounts.all}
+            filteredCount={filteredProducts.length}
+            inStockCount={filterCounts.inStock}
+            outOfStockCount={filterCounts.outOfStock}
+            needOrderCount={filterCounts.needOrder}
+          />
 
-          {products.length === 0 ? (
-            /* Empty State */
-            <div className="py-12 px-4 text-center">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                <PackageIcon className="w-7 h-7" />
-              </div>
-              <h3 className="text-base sm:text-lg font-bold text-slate-800">No products available</h3>
-              <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
-                {isAdmin 
-                  ? 'Add your first product to Shondani Medical Hall inventory.' 
-                  : 'Products will appear here once added by the administrator.'}
-              </p>
-              {isAdmin && (
-                <div className="mt-4 flex items-center justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleAddProduct}
-                    className="flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-amber-500 hover:bg-amber-600 rounded-lg shadow-xs cursor-pointer"
-                  >
-                    <PlusIcon className="w-4 h-4" />
-                    + Add First Product
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* UNIFIED SIDE-BY-SIDE RESPONSIVE TABLE FOR MOBILE & DESKTOP */
-            <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
-              <table className="w-full text-left border-collapse min-w-[620px] sm:min-w-[760px]">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                    <th className="py-2.5 px-1.5 sm:px-2.5 text-center w-9 sm:w-12 sticky left-0 z-20 bg-slate-50 border-r border-slate-200">
-                      #
-                    </th>
-                    <th className="py-2.5 px-1.5 sm:px-3 min-w-[130px] sm:min-w-[200px]">
-                      Product Name
-                    </th>
-                    <th className="py-2.5 px-1 sm:px-2.5 w-20 sm:w-28 text-right">
-                      Price ({meta.currency})
-                    </th>
-                    <th className="py-2.5 px-1 sm:px-2.5 w-28 sm:w-36 text-center">
-                      {isAdmin ? 'Warehouse Stock' : 'Stock'}
-                    </th>
-                    <th className="py-2.5 px-1 sm:px-2.5 w-28 sm:w-36 text-center">
-                      {isAdmin ? 'Target Qty' : 'Order Qty'}
-                    </th>
-                    <th className="py-2.5 px-1.5 sm:px-3 w-24 sm:w-32 text-right">
-                      {isAdmin ? `Stock Value (${meta.currency})` : `Amount (${meta.currency})`}
-                    </th>
-                    <th className="py-2.5 px-1 sm:px-2.5 w-24 sm:w-36 text-right">
-                      {isAdmin ? 'Actions' : 'Status'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredProducts.map((product, idx) => (
-                    <InventoryRow
-                      key={product._id}
-                      product={product}
-                      index={idx}
-                      totalProducts={products.length}
-                      role={role}
-                      currency={meta.currency}
-                      userOrderQty={userOrders[product._id] || 0}
-                      onUserOrderQtyChange={updateUserOrderQty}
-                      onUpdate={handleUpdateProduct}
-                      onInsertAbove={handleInsertAbove}
-                      onInsertBelow={handleInsertBelow}
-                      onMoveUp={handleMoveUp}
-                      onMoveDown={handleMoveDown}
-                      onDeleteRequest={setProductToDelete}
-                    />
-                  ))}
-                </tbody>
-                {/* Table Footer with Exact Grand Total */}
-                <tfoot>
-                  <tr className="bg-slate-50 border-t-2 border-slate-300">
-                    <td colSpan={2} className="py-3 px-3 sm:px-4 sticky left-0 z-10 bg-slate-50">
-                      {isAdmin ? (
-                        <button
-                          type="button"
-                          onClick={handleAddProduct}
-                          className="flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-950 cursor-pointer"
-                        >
-                          <PlusIcon className="w-3.5 h-3.5" />
-                          <span>+ Add Another Product</span>
-                        </button>
-                      ) : (
-                        <span className="text-[11px] sm:text-xs font-semibold text-slate-500">
-                          Total calculated live:
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-1 sm:px-2.5 text-right text-xs font-bold text-slate-600 uppercase">
-                      Grand Total:
-                    </td>
-                    <td className="py-3 px-1 sm:px-2.5 text-center text-xs font-bold text-slate-800">
-                      {isAdmin ? `${adminStats.totalStock.toLocaleString()} units` : '—'}
-                    </td>
-                    <td className="py-3 px-1 sm:px-2.5 text-center text-xs font-bold text-indigo-700">
-                      {isAdmin ? '—' : `${userStats.totalOrderedUnits.toLocaleString()} units`}
-                    </td>
-                    <td className="py-3 px-1.5 sm:px-3 text-right text-sm sm:text-base font-black text-indigo-950">
-                      {meta.currency}{isAdmin 
-                        ? adminStats.totalInventoryValue.toLocaleString() 
-                        : userStats.grandTotal.toLocaleString()}
-                    </td>
-                    <td className="py-3 px-1 sm:px-2.5 text-right">
-                      {!isAdmin && userStats.totalOrderedItems > 0 && (
-                        <button
-                          type="button"
-                          onClick={handlePlaceOrder}
-                          className="px-2.5 sm:px-3 py-1 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer"
-                        >
-                          Place Order
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-
-          {/* Bottom Summary Bar */}
-          <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="text-xs text-slate-600">
-              Showing <span className="font-bold text-slate-900">{filteredProducts.length}</span> products
-              {!isAdmin && userStats.totalOrderedItems > 0 && (
-                <span className="ml-2 text-indigo-700 font-bold">
-                  ({userStats.totalOrderedItems} items selected in order)
+          {/* 4. Main Responsive Table Sheet (NATURAL FLOW, NO VERTICAL SCROLLBAR) */}
+          <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+            {/* Banner */}
+            <div className={`px-3 sm:px-4 py-1.5 sm:py-2 border-b flex flex-wrap items-center justify-between gap-2 ${
+              isAdmin ? 'bg-amber-50/50 border-amber-200/60' : 'bg-indigo-50/50 border-indigo-200/60'
+            }`}>
+              <div>
+                <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700">
+                  {isAdmin ? 'SHONDANI ADMIN INVENTORY' : 'SHONDANI PRODUCT ORDER SHEET'} • {filteredProducts.length} OF {products.length} PRODUCTS
                 </span>
-              )}
+              </div>
+              <div className="text-[11px] sm:text-xs text-slate-500 flex items-center gap-2 sm:gap-3">
+                <span>{isAdmin ? 'Value = Price × Stock' : 'Amount = Price × Order Qty'}</span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2.5 text-sm">
-              <span className="font-bold text-slate-600 uppercase text-xs tracking-wider">
-                {isAdmin ? 'Total Inventory Value:' : 'Grand Total:'}
-              </span>
-              <span className="text-lg sm:text-xl font-black text-indigo-700">
-                {meta.currency}{isAdmin 
-                  ? adminStats.totalInventoryValue.toLocaleString() 
-                  : userStats.grandTotal.toLocaleString()}
-              </span>
+            {products.length === 0 ? (
+              /* Empty State */
+              <div className="py-12 px-4 text-center">
+                <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <PackageIcon className="w-7 h-7" />
+                </div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-800">No products available</h3>
+                <p className="mt-1 text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
+                  {isAdmin 
+                    ? 'Add your first product to Shondani Medical Hall inventory.' 
+                    : 'Products will appear here once added by the administrator.'}
+                </p>
+                {isAdmin && (
+                  <div className="mt-4 flex items-center justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleAddProduct}
+                      className="flex items-center gap-1.5 px-3.5 py-2 text-xs sm:text-sm font-bold text-slate-950 bg-amber-500 hover:bg-amber-600 rounded-lg shadow-xs cursor-pointer"
+                    >
+                      <PlusIcon className="w-4 h-4" />
+                      + Add First Product
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* NATURAL FIT RESPONSIVE TABLE FOR MOBILE & DESKTOP */
+              <div className="overflow-x-auto sm:overflow-x-visible -webkit-overflow-scrolling-touch">
+                <table className="w-full text-left border-collapse sm:min-w-[720px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      <th className="hidden sm:table-cell py-2 px-1 sm:px-2 text-center w-9 sm:w-12 sticky left-0 z-20 bg-slate-50 border-r border-slate-200">
+                        #
+                      </th>
+                      <th className="py-2 px-1.5 sm:px-2.5 min-w-[120px] sm:min-w-[180px]">
+                        Product Name
+                      </th>
+                      <th className="py-2 px-1 sm:px-2 w-16 sm:w-24 text-right">
+                        Price ({meta.currency})
+                      </th>
+                      <th className="py-2 px-1 sm:px-2 w-20 sm:w-28 text-center">
+                        {isAdmin ? 'Warehouse Stock' : 'Stock'}
+                      </th>
+                      <th className="py-2 px-1 sm:px-2 w-24 sm:w-32 text-center">
+                        {isAdmin ? 'Target Qty' : 'Order Qty'}
+                      </th>
+                      <th className="py-2 px-1 sm:px-2.5 w-20 sm:w-28 text-right">
+                        {isAdmin ? `Stock Value (${meta.currency})` : `Amount (${meta.currency})`}
+                      </th>
+                      <th className={`py-2 px-1 sm:px-2 text-right ${isAdmin ? 'w-20 sm:w-32' : 'hidden sm:table-cell w-16 sm:w-24'}`}>
+                        {isAdmin ? 'Actions' : 'Status'}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.map((product, idx) => (
+                      <InventoryRow
+                        key={product._id}
+                        product={product}
+                        index={idx}
+                        totalProducts={products.length}
+                        role={role}
+                        currency={meta.currency}
+                        userOrderQty={userOrders[product._id] || 0}
+                        onUserOrderQtyChange={updateUserOrderQty}
+                        onUpdate={handleUpdateProduct}
+                        onInsertAbove={handleInsertAbove}
+                        onInsertBelow={handleInsertBelow}
+                        onMoveUp={handleMoveUp}
+                        onMoveDown={handleMoveDown}
+                        onDeleteRequest={setProductToDelete}
+                      />
+                    ))}
+                  </tbody>
+                  {/* Table Footer with Exact Grand Total */}
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t-2 border-slate-300">
+                      <td className="hidden sm:table-cell py-2 px-1 sm:px-2 sticky left-0 z-10 bg-slate-50"></td>
+                      <td className="py-2 px-1.5 sm:px-2.5 bg-slate-50">
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={handleAddProduct}
+                            className="flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-950 cursor-pointer"
+                          >
+                            <PlusIcon className="w-3.5 h-3.5" />
+                            <span>+ Add Another Product</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] sm:text-xs font-semibold text-slate-500">
+                            Live calculation:
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-1 sm:px-2 text-right text-xs font-bold text-slate-600 uppercase">
+                        Grand Total:
+                      </td>
+                      <td className="py-2 px-1 sm:px-2 text-center text-xs font-bold text-slate-800">
+                        {isAdmin ? `${adminStats.totalStock.toLocaleString()} units` : '—'}
+                      </td>
+                      <td className="py-2 px-1 sm:px-2 text-center text-xs font-bold text-indigo-700">
+                        {isAdmin ? '—' : `${userStats.totalOrderedUnits.toLocaleString()} units`}
+                      </td>
+                      <td className="py-2 px-1 sm:px-2.5 text-right text-sm sm:text-base font-black text-indigo-950">
+                        {meta.currency}{isAdmin 
+                          ? adminStats.totalInventoryValue.toLocaleString() 
+                          : userStats.grandTotal.toLocaleString()}
+                      </td>
+                      <td className={`py-2 px-1 sm:px-2 text-right ${isAdmin ? '' : 'hidden sm:table-cell'}`}>
+                        {!isAdmin && userStats.totalOrderedItems > 0 && (
+                          <button
+                            type="button"
+                            onClick={handlePlaceOrder}
+                            className="px-2.5 sm:px-3 py-1 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer"
+                          >
+                            Place Order
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Bottom Summary Bar */}
+            <div className="p-2.5 sm:p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-slate-600">
+                Showing <span className="font-bold text-slate-900">{filteredProducts.length}</span> products
+                {!isAdmin && userStats.totalOrderedItems > 0 && (
+                  <span className="ml-2 text-indigo-700 font-bold">
+                    ({userStats.totalOrderedItems} items selected in order)
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-bold text-slate-600 uppercase text-xs tracking-wider">
+                  {isAdmin ? 'Total Inventory Value:' : 'Grand Total:'}
+                </span>
+                <span className="text-lg sm:text-xl font-black text-indigo-700">
+                  {meta.currency}{isAdmin 
+                    ? adminStats.totalInventoryValue.toLocaleString() 
+                    : userStats.grandTotal.toLocaleString()}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
 
-      {/* 5. Modals & Dialogs */}
-      {/* Admin Login Modal (omar / Omar88067) */}
-      <AdminLoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onSuccess={handleAdminLoginSuccess}
-      />
+        {/* 5. Modals & Dialogs */}
+        {/* Admin Login Modal (omar / Omar88067) */}
+        <AdminLoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => setIsLoginModalOpen(false)}
+          onSuccess={handleAdminLoginSuccess}
+        />
 
-      {/* Admin Operations Modals */}
-      {isAdmin && (
-        <>
-          <QuickBatchAddModal
-            isOpen={isBatchModalOpen}
-            onClose={() => setIsBatchModalOpen(false)}
-            onAddProducts={handleBatchAdd}
-          />
+        {/* Admin Operations Modals */}
+        {isAdmin && (
+          <>
+            <QuickBatchAddModal
+              isOpen={isBatchModalOpen}
+              onClose={() => setIsBatchModalOpen(false)}
+              onAddProducts={handleBatchAdd}
+            />
 
-          <InsertAtSerialModal
-            isOpen={isInsertModalOpen}
-            maxSerial={products.length}
-            onClose={() => setIsInsertModalOpen(false)}
-            onInsert={handleInsertAtSerial}
-          />
+            <InsertAtSerialModal
+              isOpen={isInsertModalOpen}
+              maxSerial={products.length}
+              onClose={() => setIsInsertModalOpen(false)}
+              onInsert={handleInsertAtSerial}
+            />
 
-          <ConfirmDialog
-            isOpen={productToDelete !== null}
-            title="Delete Product from Shondani?"
-            message={`Are you sure you want to delete "${productToDelete?.name || 'this product'}" (Serial #${productToDelete?.serialNumber})? All subsequent products will automatically move up by one serial number.`}
-            confirmText="Delete Product"
-            cancelText="Keep Product"
-            onConfirm={confirmDeleteProduct}
-            onCancel={() => setProductToDelete(null)}
-            isDestructive={true}
-          />
-        </>
-      )}
+            <ConfirmDialog
+              isOpen={productToDelete !== null}
+              title="Delete Product from Shondani?"
+              message={`Are you sure you want to delete "${productToDelete?.name || 'this product'}" (Serial #${productToDelete?.serialNumber})? All subsequent products will automatically move up by one serial number.`}
+              confirmText="Delete Product"
+              cancelText="Keep Product"
+              onConfirm={confirmDeleteProduct}
+              onCancel={() => setProductToDelete(null)}
+              isDestructive={true}
+            />
+          </>
+        )}
 
-      {/* Order Success Modal (Normal User) */}
-      <OrderSuccessModal
-        isOpen={completedOrder !== null}
-        orderId={completedOrder?.orderId || ''}
-        customerName="Customer User"
-        items={completedOrder?.items || []}
-        grandTotal={completedOrder?.grandTotal || 0}
-        currency={meta.currency}
-        onClose={() => setCompletedOrder(null)}
-        onDownloadInvoice={handleDownloadPdf}
-      />
+        {/* Order Success Modal (Normal User) */}
+        <OrderSuccessModal
+          isOpen={completedOrder !== null}
+          orderId={completedOrder?.orderId || ''}
+          customerName="Customer User"
+          items={completedOrder?.items || []}
+          grandTotal={completedOrder?.grandTotal || 0}
+          currency={meta.currency}
+          onClose={() => setCompletedOrder(null)}
+          onDownloadInvoice={handleDownloadPdf}
+        />
+      </div>
 
       {/* Printable Invoice View */}
       <PrintableInvoice
@@ -812,3 +839,4 @@ export function InventorySheet() {
     </div>
   );
 }
+
