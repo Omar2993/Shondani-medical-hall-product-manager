@@ -50,7 +50,7 @@ export function AdminLoginModal({
   };
 
   const handleAutoFill = () => {
-    setUsername('omar');
+    setUsername('Omar');
     setPassword('Omar88067');
     setError('');
   };
@@ -100,7 +100,7 @@ export function AdminLoginModal({
               spellCheck={false}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. omar"
+              placeholder="e.g. Omar"
               autoFocus
               required
               className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
@@ -143,7 +143,7 @@ export function AdminLoginModal({
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center justify-between gap-2">
             <div>
               <span className="font-bold text-slate-700">Admin Account:</span>{' '}
-              Username: <code className="font-bold text-amber-800">omar</code> • Password: <code className="font-bold text-amber-800">Omar88067</code>
+              Username: <code className="font-bold text-amber-800">Omar</code> • Password: <code className="font-bold text-amber-800">Omar88067</code>
             </div>
             <button
               type="button"

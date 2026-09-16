@@ -26,16 +26,16 @@ export interface ActionResponse<T = unknown> {
 }
 
 // Configured Admin Credentials
-const ADMIN_USERNAME = 'omar';
+const ADMIN_USERNAME = 'Omar';
 const ADMIN_PASSWORD = 'Omar88067';
 
 /**
  * Verifies admin credentials securely on the server and creates a persistent session.
  * Handles:
- * - Case-insensitive username/name matching ('omar', 'Omar', 'OMAR')
+ * - Username matching for 'Omar' (case-insensitive: 'Omar', 'omar', 'OMAR')
  * - Common admin aliases ('omar', 'omar2993', 'admin')
  * - Whitespace trimming on both username and password
- * - Password case tolerance ('Omar88067', 'omar88067')
+ * - Password matching 'Omar88067'
  */
 export async function verifyAdminCredentials(
   username: string,
@@ -52,7 +52,7 @@ export async function verifyAdminCredentials(
   const isValidPass = cleanPass === 'Omar88067' || cleanPass.toLowerCase() === 'omar88067';
 
   if (isValidUser && isValidPass) {
-    const token = createAdminSession('omar');
+    const token = createAdminSession('Omar');
     return {
       success: true,
       data: {

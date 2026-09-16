@@ -821,7 +821,7 @@ export function InventorySheet() {
         </main>
 
         {/* 5. Modals & Dialogs */}
-        {/* Admin Login Modal (omar / Omar88067) */}
+        {/* Admin Login Modal (Omar / Omar88067) */}
         <AdminLoginModal
           isOpen={isLoginModalOpen}
           onClose={() => setIsLoginModalOpen(false)}

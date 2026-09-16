@@ -25,7 +25,7 @@ export function RoleSwitcher({
         <div className="flex items-center gap-1.5">
           <div className="flex items-center gap-1 bg-amber-500 text-slate-950 px-2.5 py-1.5 rounded-lg text-xs font-black shadow-xs select-none">
             <span>👑</span>
-            <span>Admin (omar)</span>
+            <span>Admin (Omar)</span>
           </div>
 
           <button

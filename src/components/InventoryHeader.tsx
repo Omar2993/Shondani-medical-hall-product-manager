@@ -88,7 +88,7 @@ export function InventoryHeader({
             <span>{isAdmin ? '👑' : '👤'}</span>
             <span className="truncate">
               {isAdmin 
-                ? 'ADMINISTRATOR (omar): Full inventory management & product controls active' 
+                ? 'ADMINISTRATOR (Omar): Full inventory management & product controls active' 
                 : 'CUSTOMER MODE: View Shondani catalog, set Order Qty, and submit orders'}
             </span>
           </div>
