@@ -71,7 +71,7 @@ export function InventoryHeader({
   return (
     <header className="bg-white border-b border-slate-200 shadow-xs">
       {/* Top Banner */}
-      <div className={`px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs font-semibold flex items-center justify-between transition-colors ${
+      <div className={`px-3 sm:px-4 py-1 text-[11px] sm:text-xs font-semibold flex items-center justify-between transition-colors ${
         isAdmin 
           ? 'bg-amber-50 text-amber-900 border-b border-amber-200' 
           : 'bg-indigo-50 text-indigo-900 border-b border-indigo-200'
@@ -92,10 +92,10 @@ export function InventoryHeader({
       </div>
 
       {/* Main Top Bar: Store Name & Role Switcher */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3.5 flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-100">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2 sm:py-2.5 flex flex-wrap items-center justify-between gap-2.5 border-b border-slate-100">
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className={`p-2 sm:p-2.5 rounded-xl ${isAdmin ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}`}>
-            <StoreIcon className="w-5 h-5" />
+          <div className={`p-1.5 sm:p-2 rounded-xl ${isAdmin ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}`}>
+            <StoreIcon className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
 
           {isAdmin && isEditingShop ? (
@@ -129,11 +129,11 @@ export function InventoryHeader({
               }}
             >
               <div>
-                <h1 className="text-base sm:text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
+                <h1 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-1.5">
                   {meta.shopName}
                   {isAdmin && <EditIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600 transition-colors" />}
                 </h1>
-                <p className="text-[11px] sm:text-xs text-slate-500 flex items-center gap-1.5">
+                <p className="text-[10px] sm:text-xs text-slate-500 flex items-center gap-1.5">
                   <span className="font-semibold">{isAdmin ? 'INVENTORY LEDGER' : 'ORDER SHEET'}</span>
                   <span>•</span>
                   <span>{meta.date}</span>
@@ -184,7 +184,7 @@ export function InventoryHeader({
       </div>
 
       {/* Main Action Bar */}
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-1.5 sm:py-2 flex flex-wrap items-center justify-between gap-2">
         {/* Left: Role Actions */}
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {isAdmin ? (

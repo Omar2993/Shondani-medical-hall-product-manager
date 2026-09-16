@@ -539,16 +539,20 @@ export function InventorySheet() {
     window.print();
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = (customInvoiceNumber?: string) => {
     const count = isAdmin ? products.filter(p => (p.stock || 0) > 0).length : userStats.totalOrderedItems;
     if (count === 0) {
       alert('No products to invoice. Please order or select at least one product before generating an invoice.');
       return;
     }
 
+    const currentMeta = customInvoiceNumber 
+      ? { ...meta, invoiceNumber: customInvoiceNumber }
+      : meta;
+
     const res = generateInvoicePdf({
       products,
-      meta,
+      meta: currentMeta,
       role,
       userOrders,
       customerName: 'Customer User',
@@ -563,7 +567,7 @@ export function InventorySheet() {
   const isAdmin = role === 'admin';
 
   return (
-    <div className="min-h-screen bg-slate-100/70 pb-12">
+    <div className="min-h-screen bg-slate-100/70 pb-6 sm:pb-10">
       <div className="print:hidden">
         {/* 1. Header with Shondani Medical Hall branding & Role Switcher */}
         <InventoryHeader
@@ -578,7 +582,7 @@ export function InventorySheet() {
           onAddProduct={handleAddProduct}
           onOpenBatchModal={() => setIsBatchModalOpen(true)}
           onOpenInsertModal={() => setIsInsertModalOpen(true)}
-          onDownloadPdf={handleDownloadPdf}
+          onDownloadPdf={() => handleDownloadPdf()}
           onPrintSheet={handlePrintSheet}
           totalProducts={products.length}
           userOrderCount={userStats.totalOrderedItems}
@@ -587,7 +591,7 @@ export function InventorySheet() {
           onClearOrder={handleClearOrder}
         />
 
-        <main className="max-w-7xl mx-auto px-2 sm:px-4 py-2.5 sm:py-4 space-y-2.5 sm:space-y-4">
+        <main className="max-w-7xl mx-auto px-1.5 sm:px-4 py-2 sm:py-3.5 space-y-2 sm:space-y-3">
           {/* 2. Key Metrics Summary Dashboard */}
           <InventorySummary 
             role={role}
@@ -612,15 +616,15 @@ export function InventorySheet() {
           {/* 4. Main Responsive Table Sheet (NATURAL FLOW, NO VERTICAL SCROLLBAR) */}
           <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
             {/* Banner */}
-            <div className={`px-3 sm:px-4 py-1.5 sm:py-2 border-b flex flex-wrap items-center justify-between gap-2 ${
+            <div className={`px-2.5 sm:px-4 py-1 sm:py-1.5 border-b flex flex-wrap items-center justify-between gap-2 ${
               isAdmin ? 'bg-amber-50/50 border-amber-200/60' : 'bg-indigo-50/50 border-indigo-200/60'
             }`}>
               <div>
-                <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-700">
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-700">
                   {isAdmin ? 'SHONDANI ADMIN INVENTORY' : 'SHONDANI PRODUCT ORDER SHEET'} • {filteredProducts.length} OF {products.length} PRODUCTS
                 </span>
               </div>
-              <div className="text-[11px] sm:text-xs text-slate-500 flex items-center gap-2 sm:gap-3">
+              <div className="text-[10px] sm:text-xs text-slate-500 flex items-center gap-2 sm:gap-3">
                 <span>{isAdmin ? 'Value = Price × Stock' : 'Amount = Price × Order Qty'}</span>
               </div>
             </div>
@@ -656,25 +660,25 @@ export function InventorySheet() {
                 <table className="w-full text-left border-collapse sm:min-w-[720px]">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[10px] sm:text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                      <th className="hidden sm:table-cell py-2 px-1 sm:px-2 text-center w-9 sm:w-12 sticky left-0 z-20 bg-slate-50 border-r border-slate-200">
+                      <th className="hidden sm:table-cell py-1.5 px-1 sm:px-2 text-center w-8 sm:w-12 sticky left-0 z-20 bg-slate-50 border-r border-slate-200">
                         #
                       </th>
-                      <th className="py-2 px-1.5 sm:px-2.5 min-w-[120px] sm:min-w-[180px]">
+                      <th className="py-1.5 px-1 sm:px-2 min-w-[105px] sm:min-w-[180px]">
                         Product Name
                       </th>
-                      <th className="py-2 px-1 sm:px-2 w-16 sm:w-24 text-right">
+                      <th className="py-1.5 px-0.5 sm:px-2 w-14 sm:w-24 text-right">
                         Price ({meta.currency})
                       </th>
-                      <th className="py-2 px-1 sm:px-2 w-20 sm:w-28 text-center">
+                      <th className="py-1.5 px-0.5 sm:px-2 w-14 sm:w-28 text-center">
                         {isAdmin ? 'Warehouse Stock' : 'Stock'}
                       </th>
-                      <th className="py-2 px-1 sm:px-2 w-24 sm:w-32 text-center">
+                      <th className={`py-1.5 px-0.5 sm:px-2 ${isAdmin ? 'hidden md:table-cell w-20 sm:w-32' : 'w-20 sm:w-32'} text-center`}>
                         {isAdmin ? 'Target Qty' : 'Order Qty'}
                       </th>
-                      <th className="py-2 px-1 sm:px-2.5 w-20 sm:w-28 text-right">
+                      <th className="py-1.5 px-1 sm:px-2.5 w-16 sm:w-28 text-right">
                         {isAdmin ? `Stock Value (${meta.currency})` : `Amount (${meta.currency})`}
                       </th>
-                      <th className={`py-2 px-1 sm:px-2 text-right ${isAdmin ? 'w-20 sm:w-32' : 'hidden sm:table-cell w-16 sm:w-24'}`}>
+                      <th className={`py-1.5 px-0.5 sm:px-2 text-right ${isAdmin ? 'w-16 sm:w-32' : 'hidden sm:table-cell w-16 sm:w-24'}`}>
                         {isAdmin ? 'Actions' : 'Status'}
                       </th>
                     </tr>
@@ -702,8 +706,8 @@ export function InventorySheet() {
                   {/* Table Footer with Exact Grand Total */}
                   <tfoot>
                     <tr className="bg-slate-50 border-t-2 border-slate-300">
-                      <td className="hidden sm:table-cell py-2 px-1 sm:px-2 sticky left-0 z-10 bg-slate-50"></td>
-                      <td className="py-2 px-1.5 sm:px-2.5 bg-slate-50">
+                      <td className="hidden sm:table-cell py-1.5 px-1 sm:px-2 sticky left-0 z-10 bg-slate-50"></td>
+                      <td className="py-1.5 px-1 sm:px-2 bg-slate-50">
                         {isAdmin ? (
                           <button
                             type="button"
@@ -714,31 +718,31 @@ export function InventorySheet() {
                             <span>+ Add Another Product</span>
                           </button>
                         ) : (
-                          <span className="text-[11px] sm:text-xs font-semibold text-slate-500">
+                          <span className="text-[10px] sm:text-xs font-semibold text-slate-500">
                             Live calculation:
                           </span>
                         )}
                       </td>
-                      <td className="py-2 px-1 sm:px-2 text-right text-xs font-bold text-slate-600 uppercase">
+                      <td className="py-1.5 px-0.5 sm:px-2 text-right text-[11px] sm:text-xs font-bold text-slate-600 uppercase">
                         Grand Total:
                       </td>
-                      <td className="py-2 px-1 sm:px-2 text-center text-xs font-bold text-slate-800">
+                      <td className="py-1.5 px-0.5 sm:px-2 text-center text-xs font-bold text-slate-800">
                         {isAdmin ? `${adminStats.totalStock.toLocaleString()} units` : '—'}
                       </td>
-                      <td className="py-2 px-1 sm:px-2 text-center text-xs font-bold text-indigo-700">
+                      <td className={`py-1.5 px-0.5 sm:px-2 text-center text-xs font-bold text-indigo-700 ${isAdmin ? 'hidden md:table-cell' : ''}`}>
                         {isAdmin ? '—' : `${userStats.totalOrderedUnits.toLocaleString()} units`}
                       </td>
-                      <td className="py-2 px-1 sm:px-2.5 text-right text-sm sm:text-base font-black text-indigo-950">
+                      <td className="py-1.5 px-1 sm:px-2.5 text-right text-xs sm:text-base font-black text-indigo-950">
                         {meta.currency}{isAdmin 
                           ? adminStats.totalInventoryValue.toLocaleString() 
                           : userStats.grandTotal.toLocaleString()}
                       </td>
-                      <td className={`py-2 px-1 sm:px-2 text-right ${isAdmin ? '' : 'hidden sm:table-cell'}`}>
+                      <td className={`py-1.5 px-0.5 sm:px-2 text-right ${isAdmin ? 'w-16 sm:w-32' : 'hidden sm:table-cell'}`}>
                         {!isAdmin && userStats.totalOrderedItems > 0 && (
                           <button
                             type="button"
                             onClick={handlePlaceOrder}
-                            className="px-2.5 sm:px-3 py-1 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer"
+                            className="px-2 sm:px-3 py-1 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs cursor-pointer"
                           >
                             Place Order
                           </button>
@@ -751,7 +755,7 @@ export function InventorySheet() {
             )}
 
             {/* Bottom Summary Bar */}
-            <div className="p-2.5 sm:p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+            <div className="p-2 sm:p-2.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-slate-600">
                 Showing <span className="font-bold text-slate-900">{filteredProducts.length}</span> products
                 {!isAdmin && userStats.totalOrderedItems > 0 && (
@@ -821,7 +825,7 @@ export function InventorySheet() {
           grandTotal={completedOrder?.grandTotal || 0}
           currency={meta.currency}
           onClose={() => setCompletedOrder(null)}
-          onDownloadInvoice={handleDownloadPdf}
+          onDownloadInvoice={() => handleDownloadPdf(completedOrder?.orderId)}
         />
       </div>
 

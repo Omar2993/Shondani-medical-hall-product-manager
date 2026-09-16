@@ -17,7 +17,9 @@ function generateInvoicePdf({ products, meta, role, userOrders, customerName = '
     const validItems = [];
     for (let i = 0; i < products.length; i++) {
         const p = products[i];
-        const qty = isAdmin ? (p.stock || 0) : (userOrders[p._id] || 0);
+        const qty = isAdmin
+            ? (p.stock || 0)
+            : (userOrders && userOrders[p._id] !== undefined ? userOrders[p._id] : (p.orderQuantity || 0));
         if (qty > 0) {
             const price = p.price || 0;
             validItems.push({
@@ -186,20 +188,26 @@ function generateInvoicePdf({ products, meta, role, userOrders, customerName = '
     drawPage1Header();
     drawTableHeader(false);
     // 5. Render Products with Dynamic Row Height and Y-Tracking
-    const lineHeight = 4.2;
-    const reservedFooterSpace = 32; // space needed for table footer / totals
+    const lineHeight = 4.0;
+    const totalRowHeight = 9;
+    const signatureBlockHeight = 22;
+    const fullSummaryHeight = totalRowHeight + 6 + signatureBlockHeight;
     for (let i = 0; i < validItems.length; i++) {
         const item = validItems[i];
-        // Measure name lines within allowed column width (minus 5mm horizontal padding)
+        const isLastItem = i === validItems.length - 1;
+        // Measure name lines in BOLD within allowed column width (minus 5mm horizontal padding)
+        // CRITICAL: Set bold font BEFORE splitTextToSize so character widths match bold typography exactly
         const printableNameWidth = colNameWidth - 5;
-        doc.setFont('helvetica', 'normal');
+        doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         const nameLines = doc.splitTextToSize(item.name, printableNameWidth);
         // Compute actual vertical space occupied by this row
         const lineCount = Math.max(1, nameLines.length);
         const rowHeight = Math.max(7, lineCount * lineHeight + 3);
         // Check if current page has enough vertical space
-        if (currentY + rowHeight > pageHeight - marginBottom - reservedFooterSpace) {
+        // On the last item, keep row together with summary block to avoid orphan signature pages
+        const threshold = isLastItem ? (pageHeight - marginBottom - fullSummaryHeight) : (pageHeight - marginBottom);
+        if (currentY + rowHeight > threshold) {
             // Automatic clean page break
             doc.addPage();
             currentY = marginTop + 4;
@@ -224,7 +232,7 @@ function generateInvoicePdf({ products, meta, role, userOrders, customerName = '
         doc.setFontSize(7.5);
         doc.setTextColor(100, 116, 139);
         doc.text(String(item.serialNumber), colIndexX + colIndexWidth / 2, currentY + 4.8, { align: 'center' });
-        // 2. Product Name (multiline text safely wrapped)
+        // 2. Product Name (multiline text safely wrapped without overlapping adjacent columns)
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(15, 23, 42);
@@ -248,8 +256,7 @@ function generateInvoicePdf({ products, meta, role, userOrders, customerName = '
         currentY += rowHeight;
     }
     // 6. Table Grand Total Footer Row
-    const totalRowHeight = 9;
-    if (currentY + totalRowHeight > pageHeight - marginBottom - 18) {
+    if (currentY + totalRowHeight + signatureBlockHeight > pageHeight - marginBottom) {
         doc.addPage();
         currentY = marginTop + 4;
     }

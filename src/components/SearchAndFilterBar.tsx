@@ -52,18 +52,18 @@ export function SearchAndFilterBar({
   };
 
   return (
-    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 bg-white p-2 sm:p-3 rounded-lg border border-slate-200 shadow-xs">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-1.5 sm:gap-2 bg-white p-1.5 sm:p-2 rounded-lg border border-slate-200 shadow-xs">
       {/* Search Input */}
       <div className="relative flex-1 min-w-[180px]">
         <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-          <SearchIcon className="w-4 h-4" />
+          <SearchIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </div>
         <input
           type="text"
           value={localQuery}
           onChange={(e) => handleInputChange(e.target.value)}
           placeholder="Search products in Shondani..."
-          className="w-full pl-8 pr-7 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-slate-900 placeholder-slate-400 transition-all"
+          className="w-full pl-7.5 pr-7 py-1 sm:py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white text-slate-900 placeholder-slate-400 transition-all"
         />
         {localQuery && (
           <button
@@ -72,17 +72,17 @@ export function SearchAndFilterBar({
             className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
             title="Clear"
           >
-            <XIcon className="w-4 h-4" />
+            <XIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         )}
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex items-center overflow-x-auto pb-1 sm:pb-0 gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 shrink-0 text-xs">
+      <div className="flex items-center overflow-x-auto pb-0.5 sm:pb-0 gap-1 bg-slate-100 p-0.5 sm:p-1 rounded-lg border border-slate-200 shrink-0 text-xs">
         <button
           type="button"
           onClick={() => onFilterChange('all')}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
             filter === 'all'
               ? 'bg-white text-indigo-700 shadow-xs font-bold'
               : 'text-slate-600 hover:text-slate-900'
@@ -97,7 +97,7 @@ export function SearchAndFilterBar({
         <button
           type="button"
           onClick={() => onFilterChange('in_stock')}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
             filter === 'in_stock'
               ? 'bg-white text-emerald-700 shadow-xs font-bold'
               : 'text-slate-600 hover:text-slate-900'
@@ -112,7 +112,7 @@ export function SearchAndFilterBar({
         <button
           type="button"
           onClick={() => onFilterChange('out_of_stock')}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
             filter === 'out_of_stock'
               ? 'bg-white text-rose-700 shadow-xs font-bold'
               : 'text-slate-600 hover:text-slate-900'
@@ -127,7 +127,7 @@ export function SearchAndFilterBar({
         <button
           type="button"
           onClick={() => onFilterChange('need_order')}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 rounded-md font-medium transition-all cursor-pointer whitespace-nowrap ${
             filter === 'need_order'
               ? 'bg-white text-indigo-700 shadow-xs font-bold'
               : 'text-slate-600 hover:text-slate-900'

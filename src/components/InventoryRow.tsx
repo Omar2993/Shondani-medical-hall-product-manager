@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Product, UserRole } from '@/types/product';
 import { 
   PlusIcon, 
@@ -49,6 +49,16 @@ export const InventoryRow = memo(function InventoryRow({
   const [localStock, setLocalStock] = useState(product.stock === 0 ? '' : String(product.stock));
   const [localOrderQty, setLocalOrderQty] = useState(userOrderQty === 0 ? '' : String(userOrderQty));
 
+  // Auto-growing textarea ref for Admin multiline product name editing
+  const nameTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const adjustTextareaHeight = useCallback(() => {
+    if (nameTextareaRef.current) {
+      nameTextareaRef.current.style.height = 'auto';
+      nameTextareaRef.current.style.height = `${nameTextareaRef.current.scrollHeight}px`;
+    }
+  }, []);
+
   // Debounce timers
   const nameDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const priceDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -59,6 +69,10 @@ export const InventoryRow = memo(function InventoryRow({
   useEffect(() => {
     setLocalName(product.name || '');
   }, [product.name]);
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [localName, adjustTextareaHeight]);
 
   useEffect(() => {
     setLocalPrice(product.price === 0 ? '' : String(product.price));
@@ -149,20 +163,24 @@ export const InventoryRow = memo(function InventoryRow({
       !isAdmin && currentOrder > 0 ? 'bg-indigo-50/50 hover:bg-indigo-50/80' : 'hover:bg-slate-50/70'
     }`}>
       {/* 1. Serial Number Column - Hidden on mobile, visible on desktop */}
-      <td className="hidden sm:table-cell py-1.5 px-1 sm:px-2 text-center text-xs font-bold text-slate-500 bg-white/95 sm:sticky left-0 z-10 border-r border-slate-200 select-none w-9 sm:w-12">
+      <td className="hidden sm:table-cell py-1 px-1 sm:px-2 text-center text-xs font-bold text-slate-500 bg-white/95 sm:sticky left-0 z-10 border-r border-slate-200 select-none w-8 sm:w-12">
         {product.serialNumber}
       </td>
 
-      {/* 2. Product Name - Flexible width, multiline natural wrapping */}
-      <td className="py-1 px-1.5 sm:px-2.5 min-w-[120px] sm:min-w-[180px]">
+      {/* 2. Product Name - Flexible width, multiline natural wrapping for BOTH user and admin */}
+      <td className="py-1 px-1 sm:px-2 min-w-[105px] sm:min-w-[180px]">
         {isAdmin ? (
-          <input
-            type="text"
+          <textarea
+            ref={nameTextareaRef}
+            rows={1}
             value={localName}
-            onChange={(e) => handleNameChange(e.target.value)}
+            onChange={(e) => {
+              handleNameChange(e.target.value);
+              adjustTextareaHeight();
+            }}
             onBlur={() => onUpdate(product._id, { name: localName })}
             placeholder="Product Name..."
-            className="w-full px-1.5 py-1 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-none transition-all placeholder-slate-400"
+            className="w-full resize-none overflow-hidden px-1.5 py-0.5 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-none transition-all placeholder-slate-400 break-words whitespace-pre-wrap leading-snug block"
           />
         ) : (
           <div className="py-0.5 px-0.5">
@@ -174,7 +192,7 @@ export const InventoryRow = memo(function InventoryRow({
       </td>
 
       {/* 3. Price Column */}
-      <td className="py-1 px-1 sm:px-2 w-16 sm:w-24 text-right">
+      <td className="py-1 px-0.5 sm:px-2 w-14 sm:w-24 text-right">
         {isAdmin ? (
           <div className="relative flex items-center justify-end">
             <span className="text-[10px] sm:text-xs text-slate-400 font-semibold mr-0.5 select-none">
@@ -191,7 +209,7 @@ export const InventoryRow = memo(function InventoryRow({
                 onUpdate(product._id, { price: num });
               }}
               placeholder="0"
-              className="w-12 sm:w-18 text-right px-1 py-0.5 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:outline-none"
+              className="w-10 sm:w-16 text-right px-0.5 py-0.5 text-xs sm:text-sm font-semibold text-slate-800 bg-transparent hover:bg-white focus:bg-white rounded border border-transparent hover:border-slate-300 focus:border-amber-500 focus:outline-none"
             />
           </div>
         ) : (
@@ -202,7 +220,7 @@ export const InventoryRow = memo(function InventoryRow({
       </td>
 
       {/* 4. Warehouse Stock Column */}
-      <td className="py-1 px-1 sm:px-2 w-20 sm:w-28 text-center">
+      <td className="py-1 px-0.5 sm:px-2 w-14 sm:w-28 text-center">
         {isAdmin ? (
           /* Admin Stock Steppers + Input */
           <div className="inline-flex items-center justify-center bg-slate-100/90 rounded-md p-0.5 border border-slate-200">
@@ -210,7 +228,7 @@ export const InventoryRow = memo(function InventoryRow({
               type="button"
               onClick={() => handleAdminStockDelta(-1)}
               disabled={currentStock <= 0}
-              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-slate-700 hover:bg-white rounded active:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+              className="w-4.5 h-4.5 sm:w-6 sm:h-6 flex items-center justify-center text-slate-700 hover:bg-white rounded active:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
               title="-1"
             >
               <MinusIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -225,12 +243,12 @@ export const InventoryRow = memo(function InventoryRow({
                 onUpdate(product._id, { stock: num });
               }}
               placeholder="0"
-              className="w-7 sm:w-10 text-center text-xs sm:text-sm font-bold text-slate-800 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
+              className="w-6 sm:w-10 text-center text-xs sm:text-sm font-bold text-slate-800 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
             />
             <button
               type="button"
               onClick={() => handleAdminStockDelta(1)}
-              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-slate-700 hover:bg-white rounded active:bg-slate-200 transition-all cursor-pointer"
+              className="w-4.5 h-4.5 sm:w-6 sm:h-6 flex items-center justify-center text-slate-700 hover:bg-white rounded active:bg-slate-200 transition-all cursor-pointer"
               title="+1"
             >
               <PlusIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -240,11 +258,11 @@ export const InventoryRow = memo(function InventoryRow({
           /* Normal User Read-Only Stock */
           <div className="flex items-center justify-center">
             {currentStock > 0 ? (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+              <span className="inline-flex items-center px-1 sm:px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                 {currentStock} <span className="hidden sm:inline ml-0.5">in stock</span>
               </span>
             ) : (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
+              <span className="inline-flex items-center px-1 sm:px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 whitespace-nowrap">
                 Out
               </span>
             )}
@@ -253,7 +271,7 @@ export const InventoryRow = memo(function InventoryRow({
       </td>
 
       {/* 5. Order Quantity Column */}
-      <td className="py-1 px-1 sm:px-2 w-24 sm:w-32 text-center">
+      <td className={`py-1 px-0.5 sm:px-2 ${isAdmin ? 'hidden md:table-cell w-20 sm:w-32' : 'w-20 sm:w-32'} text-center`}>
         {isAdmin ? (
           <div className="text-center text-[10px] sm:text-xs font-medium text-slate-400">
             {product.orderQuantity ? `${product.orderQuantity} target` : '—'}
@@ -265,7 +283,7 @@ export const InventoryRow = memo(function InventoryRow({
               type="button"
               onClick={() => handleUserOrderDelta(-1)}
               disabled={currentOrder <= 0}
-              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-indigo-800 hover:bg-white rounded active:bg-indigo-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+              className="w-4.5 h-4.5 sm:w-6 sm:h-6 flex items-center justify-center text-indigo-800 hover:bg-white rounded active:bg-indigo-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
               title="-1"
             >
               <MinusIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -280,12 +298,12 @@ export const InventoryRow = memo(function InventoryRow({
                 onUserOrderQtyChange(product._id, num);
               }}
               placeholder="0"
-              className="w-7 sm:w-10 text-center text-xs sm:text-sm font-extrabold text-indigo-950 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
+              className="w-6 sm:w-10 text-center text-xs sm:text-sm font-extrabold text-indigo-950 bg-transparent focus:bg-white focus:outline-none border-0 rounded py-0.5"
             />
             <button
               type="button"
               onClick={() => handleUserOrderDelta(1)}
-              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-indigo-800 hover:bg-white rounded active:bg-indigo-100 transition-all cursor-pointer"
+              className="w-4.5 h-4.5 sm:w-6 sm:h-6 flex items-center justify-center text-indigo-800 hover:bg-white rounded active:bg-indigo-100 transition-all cursor-pointer"
               title="+1"
             >
               <PlusIcon className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -295,20 +313,20 @@ export const InventoryRow = memo(function InventoryRow({
       </td>
 
       {/* 6. Amount Column */}
-      <td className="py-1.5 px-1 sm:px-2.5 text-right text-xs sm:text-sm font-extrabold w-20 sm:w-28 bg-slate-50/40">
+      <td className="py-1 px-1 sm:px-2.5 text-right text-xs sm:text-sm font-extrabold w-16 sm:w-28 bg-slate-50/40">
         <span className={!isAdmin && currentOrder > 0 ? 'text-indigo-700 font-black' : 'text-slate-800'}>
           {currency}{rowAmount.toLocaleString()}
         </span>
       </td>
 
-      {/* 7. Actions / Status Column - Status hidden on mobile for User */}
-      <td className={`py-1 px-1 sm:px-2 text-right ${isAdmin ? 'w-20 sm:w-32' : 'hidden sm:table-cell w-16 sm:w-24'}`}>
+      {/* 7. Actions / Status Column - Status completely hidden on mobile for User */}
+      <td className={`py-1 px-0.5 sm:px-2 text-right ${isAdmin ? 'w-16 sm:w-32' : 'hidden sm:table-cell w-16 sm:w-24'}`}>
         {isAdmin ? (
           <div className="flex items-center justify-end gap-0.5 sm:gap-1">
             <button
               type="button"
               onClick={() => onInsertAbove(product.serialNumber)}
-              className="p-1 text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors cursor-pointer"
+              className="px-1 py-0.5 text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors cursor-pointer"
               title="Insert Above"
             >
               <span className="text-[10px] sm:text-xs font-bold">↑+</span>
@@ -317,7 +335,7 @@ export const InventoryRow = memo(function InventoryRow({
             <button
               type="button"
               onClick={() => onInsertBelow(product.serialNumber)}
-              className="p-1 text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors cursor-pointer"
+              className="px-1 py-0.5 text-slate-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors cursor-pointer"
               title="Insert Below"
             >
               <span className="text-[10px] sm:text-xs font-bold">↓+</span>

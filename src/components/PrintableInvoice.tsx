@@ -26,19 +26,19 @@ export function PrintableInvoice({
 }: PrintableInvoiceProps) {
   const isAdmin = role === 'admin';
 
-  // For users, strictly show only items with orderQuantity > 0. Never fallback to all products.
+  // For users, strictly show only items with orderQuantity > 0. For admin, show items with stock > 0.
   const displayProducts = isAdmin
-    ? products
-    : products.filter(p => (userOrders[p._id] || 0) > 0);
+    ? products.filter(p => (p.stock || 0) > 0)
+    : products.filter(p => (userOrders[p._id] !== undefined ? userOrders[p._id] : (p.orderQuantity || 0)) > 0);
 
-  // Compute live accurate totals based only on displayed products
+  // Compute live accurate totals strictly based on displayed products
   const currentTotalUnits = isAdmin 
-    ? totalAdminStock 
-    : displayProducts.reduce((sum, p) => sum + (userOrders[p._id] || 0), 0);
+    ? displayProducts.reduce((sum, p) => sum + (p.stock || 0), 0)
+    : displayProducts.reduce((sum, p) => sum + (userOrders[p._id] !== undefined ? userOrders[p._id] : (p.orderQuantity || 0)), 0);
 
   const currentGrandTotal = isAdmin 
-    ? adminGrandTotal 
-    : displayProducts.reduce((sum, p) => sum + (p.price || 0) * (userOrders[p._id] || 0), 0);
+    ? displayProducts.reduce((sum, p) => sum + (p.price || 0) * (p.stock || 0), 0)
+    : displayProducts.reduce((sum, p) => sum + (p.price || 0) * (userOrders[p._id] !== undefined ? userOrders[p._id] : (p.orderQuantity || 0)), 0);
 
   if (displayProducts.length === 0) {
     return (

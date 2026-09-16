@@ -53,7 +53,9 @@ export function generateInvoicePdf({
 
   for (let i = 0; i < products.length; i++) {
     const p = products[i];
-    const qty = isAdmin ? (p.stock || 0) : (userOrders[p._id] || 0);
+    const qty = isAdmin 
+      ? (p.stock || 0) 
+      : (userOrders && userOrders[p._id] !== undefined ? userOrders[p._id] : (p.orderQuantity || 0));
 
     if (qty > 0) {
       const price = p.price || 0;
@@ -262,15 +264,19 @@ export function generateInvoicePdf({
   drawTableHeader(false);
 
   // 5. Render Products with Dynamic Row Height and Y-Tracking
-  const lineHeight = 4.2;
-  const reservedFooterSpace = 32; // space needed for table footer / totals
+  const lineHeight = 4.0;
+  const totalRowHeight = 9;
+  const signatureBlockHeight = 22;
+  const fullSummaryHeight = totalRowHeight + 6 + signatureBlockHeight;
 
   for (let i = 0; i < validItems.length; i++) {
     const item = validItems[i];
+    const isLastItem = i === validItems.length - 1;
 
-    // Measure name lines within allowed column width (minus 5mm horizontal padding)
+    // Measure name lines in BOLD within allowed column width (minus 5mm horizontal padding)
+    // CRITICAL: Set bold font BEFORE splitTextToSize so character widths match bold typography exactly
     const printableNameWidth = colNameWidth - 5;
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     const nameLines = doc.splitTextToSize(item.name, printableNameWidth);
 
@@ -279,7 +285,9 @@ export function generateInvoicePdf({
     const rowHeight = Math.max(7, lineCount * lineHeight + 3);
 
     // Check if current page has enough vertical space
-    if (currentY + rowHeight > pageHeight - marginBottom - reservedFooterSpace) {
+    // On the last item, keep row together with summary block to avoid orphan signature pages
+    const threshold = isLastItem ? (pageHeight - marginBottom - fullSummaryHeight) : (pageHeight - marginBottom);
+    if (currentY + rowHeight > threshold) {
       // Automatic clean page break
       doc.addPage();
       currentY = marginTop + 4;
@@ -309,7 +317,7 @@ export function generateInvoicePdf({
     doc.setTextColor(100, 116, 139);
     doc.text(String(item.serialNumber), colIndexX + colIndexWidth / 2, currentY + 4.8, { align: 'center' });
 
-    // 2. Product Name (multiline text safely wrapped)
+    // 2. Product Name (multiline text safely wrapped without overlapping adjacent columns)
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(15, 23, 42);
@@ -338,8 +346,7 @@ export function generateInvoicePdf({
   }
 
   // 6. Table Grand Total Footer Row
-  const totalRowHeight = 9;
-  if (currentY + totalRowHeight > pageHeight - marginBottom - 18) {
+  if (currentY + totalRowHeight + signatureBlockHeight > pageHeight - marginBottom) {
     doc.addPage();
     currentY = marginTop + 4;
   }
