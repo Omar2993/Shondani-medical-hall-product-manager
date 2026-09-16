@@ -8,7 +8,8 @@ import {
   InvoiceMeta, 
   UserRole,
   AdminInventoryStats,
-  UserOrderStats
+  UserOrderStats,
+  CustomerOrder
 } from '@/types/product';
 import { InventoryHeader } from './InventoryHeader';
 import { InventorySummary } from './InventorySummary';
@@ -19,17 +20,22 @@ import { InsertAtSerialModal } from './InsertAtSerialModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { AdminLoginModal } from './AdminLoginModal';
 import { OrderSuccessModal } from './OrderSuccessModal';
+import { SharedOrdersModal } from './SharedOrdersModal';
 import { PrintableInvoice } from './PrintableInvoice';
-import { generateInvoicePdf } from '@/utils/invoicePdfGenerator';
+import { generateInvoicePdf, generateSharedOrderPdf } from '@/utils/invoicePdfGenerator';
 import { PlusIcon, PackageIcon } from './icons';
 import { 
   authorizedAddProduct, 
   authorizedUpdateProduct, 
   authorizedDeleteProduct, 
-  authorizedSubmitOrder 
+  authorizedSubmitOrder,
+  authorizedInsertAtSerial,
+  authorizedBatchAdd,
+  authorizedMoveProduct,
+  authorizedUpdateMeta
 } from '@/actions/authorizedProductActions';
 
-// Initial master catalog for Shondani Medical Hall
+// Fallback initial master catalog for Shondani Medical Hall
 const INITIAL_PRODUCTS: Product[] = [
   {
     _id: 'prod_1',
@@ -82,32 +88,32 @@ const INITIAL_PRODUCTS: Product[] = [
   },
 ];
 
-const LOCAL_STORAGE_KEY = 'shondani_catalog_data_v3';
-const LOCAL_STORAGE_ORDERS_KEY = 'shondani_user_orders_v3';
-const LOCAL_STORAGE_META_KEY = 'shondani_sheet_meta_v3';
 const LOCAL_STORAGE_ADMIN_TOKEN = 'shondani_admin_token_v3';
 
 export function InventorySheet() {
-  // 1. Role State: Default to 'user' so customers cannot see admin controls without authenticating
+  // 1. Role & Auth State
   const [role, setRole] = useState<UserRole>('user');
-  const [_adminToken, setAdminToken] = useState<string | null>(null);
+  const [adminToken, setAdminToken] = useState<string | null>(null);
 
-  // 2. Master Product Catalog (Managed exclusively by Admin)
+  // 2. Authoritative Master Product Catalog (One central source of truth)
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
 
-  // 3. User Order Quantities (Completely separate from Admin warehouse stock)
-  const [userOrders, setUserOrders] = useState<Record<string, number>>({
-    prod_1: 10,
-    prod_2: 5,
-    prod_3: 6,
-  });
+  // 3. User Order Draft Quantities (Temporary selections before placing order)
+  const [userOrders, setUserOrders] = useState<Record<string, number>>({});
 
-  // 4. Filters & Search
+  // 4. Central Orders History (Shared across all devices)
+  const [orders, setOrders] = useState<CustomerOrder[]>([]);
+
+  // 5. Realtime & Sync Connection State
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
+  const [liveNotification, setLiveNotification] = useState<{ message: string; orderId?: string } | null>(null);
+
+  // 6. Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
 
-  // 5. Invoice Metadata for Shondani Medical Hall
+  // 7. Invoice Metadata for Shondani Medical Hall
   const [meta, setMeta] = useState<InvoiceMeta>({
     shopName: 'Shondani Medical Hall',
     invoiceTitle: 'INVENTORY / INVOICE',
@@ -116,10 +122,11 @@ export function InventorySheet() {
     currency: '৳',
   });
 
-  // 6. Modals
+  // 8. Modals
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [isInsertModalOpen, setIsInsertModalOpen] = useState(false);
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [completedOrder, setCompletedOrder] = useState<{
     orderId: string;
@@ -127,97 +134,197 @@ export function InventorySheet() {
     grandTotal: number;
   } | null>(null);
 
-  // Auto-save debounce timer ref
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Pending updates ref for debouncing product field changes to server
+  const pendingUpdatesRef = useRef<Record<string, Partial<Product>>>({});
+  const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Renumber helper
-  const renumberProducts = (list: Product[]): Product[] => {
-    return list.map((item, idx) => ({
-      ...item,
-      serialNumber: idx + 1,
-    }));
-  };
-
-  // Load saved state on client mount
+  // Auto-dismiss live notification toast after 6 seconds
   useEffect(() => {
-    queueMicrotask(() => {
-      try {
-        const storedCatalog = localStorage.getItem(LOCAL_STORAGE_KEY);
-        const storedOrders = localStorage.getItem(LOCAL_STORAGE_ORDERS_KEY);
-        const storedMeta = localStorage.getItem(LOCAL_STORAGE_META_KEY);
-        const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
+    if (liveNotification) {
+      const timer = setTimeout(() => {
+        setLiveNotification(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [liveNotification]);
 
-        if (storedCatalog) {
-          const parsed = JSON.parse(storedCatalog);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setProducts(renumberProducts(parsed));
-          }
+  // Sync state from central database
+  const syncFromCentral = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sync', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
         }
-
-        if (storedOrders) {
-          setUserOrders(JSON.parse(storedOrders));
+        if (data.meta) {
+          setMeta(data.meta);
         }
-
-        if (storedMeta) {
-          setMeta(JSON.parse(storedMeta));
+        if (Array.isArray(data.orders)) {
+          setOrders(data.orders);
         }
-
-        // Check for saved admin session
-        if (savedToken && savedToken.startsWith('admin_session_')) {
-          setAdminToken(savedToken);
-          setRole('admin');
-        }
-      } catch {
-        console.warn('Could not read from localStorage');
       }
-    });
+    } catch (err) {
+      console.warn('Sync from central DB failed:', err);
+    }
   }, []);
 
-  // Safe Debounced Auto-Save for Admin
-  const triggerAutoSave = useCallback((newProducts: Product[], newMeta?: InvoiceMeta) => {
-    setSaveStatus('unsaved');
+  // Initial load & real-time SSE subscription
+  useEffect(() => {
+    // 1. Fetch initial central database state
+    syncFromCentral();
 
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
+    // 2. Check saved admin session
+    try {
+      const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
+      if (savedToken && savedToken.startsWith('admin_session_')) {
+        setAdminToken(savedToken);
+        setRole('admin');
+      }
+    } catch {
+      // ignore
     }
 
-    autoSaveTimerRef.current = setTimeout(() => {
-      setSaveStatus('saving');
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newProducts));
-        if (newMeta) {
-          localStorage.setItem(LOCAL_STORAGE_META_KEY, JSON.stringify(newMeta));
-        }
-        setTimeout(() => {
-          setSaveStatus('saved');
-        }, 300);
-      } catch (err) {
-        console.error('Auto-save error:', err);
-        setSaveStatus('error');
-      }
-    }, 1200);
-  }, []);
+    // 3. Connect to Server-Sent Events (SSE) for Real-Time synchronization across all devices
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('/api/realtime');
 
-  // Persist User Order Qty
-  const updateUserOrderQty = useCallback((productId: string, newQty: number) => {
-    setUserOrders(prev => {
-      const updated = { ...prev, [productId]: Math.max(0, newQty) };
-      try {
-        localStorage.setItem(LOCAL_STORAGE_ORDERS_KEY, JSON.stringify(updated));
-      } catch {
-        // ignore
+      es.onopen = () => {
+        setIsRealtimeConnected(true);
+      };
+
+      es.onerror = () => {
+        setIsRealtimeConnected(false);
+      };
+
+      es.addEventListener('PRODUCTS_UPDATED', (e: MessageEvent) => {
+        try {
+          const updatedProducts: Product[] = JSON.parse(e.data);
+          if (Array.isArray(updatedProducts)) {
+            setProducts(updatedProducts);
+          }
+        } catch (err) {
+          console.error('Failed to parse PRODUCTS_UPDATED event', err);
+        }
+      });
+
+      es.addEventListener('ORDER_PLACED', (e: MessageEvent) => {
+        try {
+          const payload: { order: CustomerOrder; updatedProducts: Product[] } = JSON.parse(e.data);
+          if (payload.order) {
+            setOrders(prev => {
+              const exists = prev.some(o => o.orderId === payload.order.orderId);
+              return exists ? prev : [payload.order, ...prev];
+            });
+            setLiveNotification({
+              message: `Order #${payload.order.orderId.slice(-6)} placed for ৳${payload.order.grandTotal.toLocaleString()}`,
+              orderId: payload.order.orderId,
+            });
+          }
+          if (Array.isArray(payload.updatedProducts)) {
+            setProducts(payload.updatedProducts);
+          }
+        } catch (err) {
+          console.error('Failed to parse ORDER_PLACED event', err);
+        }
+      });
+
+      es.addEventListener('META_UPDATED', (e: MessageEvent) => {
+        try {
+          const updatedMeta: InvoiceMeta = JSON.parse(e.data);
+          if (updatedMeta) {
+            setMeta(updatedMeta);
+          }
+        } catch (err) {
+          console.error('Failed to parse META_UPDATED event', err);
+        }
+      });
+    } catch (err) {
+      console.error('Failed to connect to SSE realtime hub:', err);
+    }
+
+    // 4. Handle visibility change (e.g. mobile device awakens from sleep)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromCentral();
       }
-      return updated;
-    });
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      if (es) es.close();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [syncFromCentral]);
+
+  // Flush pending product edits to the server
+  const flushPendingProductUpdates = useCallback(async () => {
+    if (!adminToken) return;
+    const pending = pendingUpdatesRef.current;
+    pendingUpdatesRef.current = {};
+    const ids = Object.keys(pending);
+    if (ids.length === 0) return;
+
+    setSaveStatus('saving');
+    try {
+      for (const id of ids) {
+        await authorizedUpdateProduct(adminToken, id, pending[id]);
+      }
+      setSaveStatus('saved');
+    } catch (err) {
+      console.error('Error saving product updates:', err);
+      setSaveStatus('error');
+    }
+  }, [adminToken]);
+
+  // Update product fields (Admin only, debounced server sync)
+  const handleUpdateProduct = useCallback((id: string, updates: Partial<Product>) => {
+    if (role !== 'admin' || !adminToken) {
+      alert('Permission denied: Only Administrator can edit products.');
+      return;
+    }
+
+    // 1. Optimistic UI update
+    setProducts(prev => prev.map(p => (p._id === id ? { ...p, ...updates } : p)));
+    setSaveStatus('unsaved');
+
+    // 2. Queue for server sync
+    pendingUpdatesRef.current[id] = {
+      ...pendingUpdatesRef.current[id],
+      ...updates,
+    };
+
+    if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+    updateTimerRef.current = setTimeout(() => {
+      flushPendingProductUpdates();
+    }, 450);
+  }, [role, adminToken, flushPendingProductUpdates]);
+
+  // Manual Save (Admin only)
+  const handleManualSave = () => {
+    if (role !== 'admin') return;
+    if (updateTimerRef.current) clearTimeout(updateTimerRef.current);
+    flushPendingProductUpdates();
+  };
+
+  // Update shop metadata (Admin only)
+  const handleMetaChange = async (updatedMeta: Partial<InvoiceMeta>) => {
+    if (role !== 'admin' || !adminToken) return;
+    setMeta(prev => ({ ...prev, ...updatedMeta }));
+    await authorizedUpdateMeta(adminToken, updatedMeta);
+  };
+
+  // User Order Quantity Updates (Draft selections)
+  const updateUserOrderQty = useCallback((productId: string, newQty: number) => {
+    setUserOrders(prev => ({
+      ...prev,
+      [productId]: Math.max(0, newQty),
+    }));
   }, []);
 
   const handleClearOrder = () => {
     setUserOrders({});
-    try {
-      localStorage.removeItem(LOCAL_STORAGE_ORDERS_KEY);
-    } catch {
-      // ignore
-    }
   };
 
   // Admin Authentication Callbacks
@@ -241,102 +348,33 @@ export function InventorySheet() {
     }
   };
 
-  // Manual Save (Admin only)
-  const handleManualSave = () => {
-    if (role !== 'admin') return;
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    setSaveStatus('saving');
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(products));
-      localStorage.setItem(LOCAL_STORAGE_META_KEY, JSON.stringify(meta));
-      setTimeout(() => {
-        setSaveStatus('saved');
-      }, 300);
-    } catch (err) {
-      console.error('Manual save failed', err);
-      setSaveStatus('error');
-    }
-  };
-
-  // Update Product fields (Admin only, wrapped in useCallback to keep row memoization fast)
-  const handleUpdateProduct = useCallback(async (id: string, updates: Partial<Product>) => {
-    if (role !== 'admin') {
-      alert('Permission denied: Only Administrator can edit products.');
-      return;
-    }
-
-    setProducts((prev) => {
-      const next = prev.map((p) => (p._id === id ? { ...p, ...updates } : p));
-      triggerAutoSave(next);
-      return next;
-    });
-
-    // Background server validation
-    authorizedUpdateProduct(role, id, {
-      name: updates.name,
-      price: updates.price,
-      stock: updates.stock,
-    }).catch(console.error);
-  }, [role, triggerAutoSave]);
-
-  const handleMetaChange = (updatedMeta: Partial<InvoiceMeta>) => {
-    if (role !== 'admin') return;
-    setMeta((prev) => {
-      const next = { ...prev, ...updatedMeta };
-      triggerAutoSave(products, next);
-      return next;
-    });
-  };
-
-  // Add a single blank product at end
+  // Add a single blank product at the end (Admin only)
   const handleAddProduct = async () => {
-    if (role !== 'admin') {
+    if (role !== 'admin' || !adminToken) {
       alert('Permission denied: Only Administrator can add products.');
       return;
     }
 
-    const serverResp = await authorizedAddProduct(role, { name: 'New Product', price: 0, stock: 0 });
+    const serverResp = await authorizedAddProduct(adminToken, { name: 'New Product', price: 0, stock: 0 });
     if (!serverResp.success || !serverResp.data) {
       alert(`Server error: ${serverResp.error}`);
-      return;
     }
-
-    const newProduct: Product = {
-      ...serverResp.data,
-      serialNumber: products.length + 1,
-    };
-
-    const next = [...products, newProduct];
-    setProducts(next);
-    triggerAutoSave(next);
   };
 
-  // Insert product at any specific serial number
-  const handleInsertAtSerial = useCallback((
+  // Insert product at specific serial number (Admin only)
+  const handleInsertAtSerial = useCallback(async (
     targetSerial: number,
     name: string,
     price: number = 0,
     stock: number = 0
   ) => {
-    if (role !== 'admin') return;
+    if (role !== 'admin' || !adminToken) return;
 
-    const newProduct: Product = {
-      _id: 'prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      serialNumber: targetSerial,
-      name,
-      price,
-      stock,
-    };
-
-    setProducts(prev => {
-      const targetIndex = Math.max(0, Math.min(targetSerial - 1, prev.length));
-      const nextList = [...prev];
-      nextList.splice(targetIndex, 0, newProduct);
-      const finalized = renumberProducts(nextList);
-      triggerAutoSave(finalized);
-      return finalized;
-    });
-  }, [role, triggerAutoSave]);
+    const serverResp = await authorizedInsertAtSerial(adminToken, targetSerial, name, price, stock);
+    if (!serverResp.success) {
+      alert(`Server error: ${serverResp.error}`);
+    }
+  }, [role, adminToken]);
 
   const handleInsertAbove = useCallback((serialNumber: number) => {
     handleInsertAtSerial(serialNumber, '', 0, 0);
@@ -346,69 +384,49 @@ export function InventorySheet() {
     handleInsertAtSerial(serialNumber + 1, '', 0, 0);
   }, [handleInsertAtSerial]);
 
-  const handleBatchAdd = (names: string[]) => {
-    if (role !== 'admin') return;
+  // Batch Add Products (Admin only)
+  const handleBatchAdd = async (names: string[]) => {
+    if (role !== 'admin' || !adminToken) return;
 
-    const timestamp = Date.now();
-    const newItems: Product[] = names.map((name, idx) => ({
-      _id: `prod_${timestamp}_${idx}`,
-      serialNumber: products.length + idx + 1,
-      name,
-      price: 0,
-      stock: 0,
-    }));
-
-    const next = renumberProducts([...products, ...newItems]);
-    setProducts(next);
-    triggerAutoSave(next);
+    const serverResp = await authorizedBatchAdd(adminToken, names);
+    if (!serverResp.success) {
+      alert(`Server error: ${serverResp.error}`);
+    }
   };
 
-  const handleMoveUp = useCallback((serialNumber: number) => {
-    if (role !== 'admin' || serialNumber <= 1) return;
-    setProducts(prev => {
-      const index = serialNumber - 1;
-      const nextList = [...prev];
-      const temp = nextList[index];
-      nextList[index] = nextList[index - 1];
-      nextList[index - 1] = temp;
-      const finalized = renumberProducts(nextList);
-      triggerAutoSave(finalized);
-      return finalized;
-    });
-  }, [role, triggerAutoSave]);
+  // Move product up/down (Admin only)
+  const handleMoveUp = useCallback(async (serialNumber: number) => {
+    if (role !== 'admin' || !adminToken || serialNumber <= 1) return;
 
-  const handleMoveDown = useCallback((serialNumber: number) => {
-    if (role !== 'admin') return;
-    setProducts(prev => {
-      if (serialNumber >= prev.length) return prev;
-      const index = serialNumber - 1;
-      const nextList = [...prev];
-      const temp = nextList[index];
-      nextList[index] = nextList[index + 1];
-      nextList[index + 1] = temp;
-      const finalized = renumberProducts(nextList);
-      triggerAutoSave(finalized);
-      return finalized;
-    });
-  }, [role, triggerAutoSave]);
+    const serverResp = await authorizedMoveProduct(adminToken, serialNumber, 'up');
+    if (!serverResp.success) {
+      alert(`Server error: ${serverResp.error}`);
+    }
+  }, [role, adminToken]);
 
+  const handleMoveDown = useCallback(async (serialNumber: number) => {
+    if (role !== 'admin' || !adminToken) return;
+
+    const serverResp = await authorizedMoveProduct(adminToken, serialNumber, 'down');
+    if (!serverResp.success) {
+      alert(`Server error: ${serverResp.error}`);
+    }
+  }, [role, adminToken]);
+
+  // Confirm delete product (Admin only)
   const confirmDeleteProduct = async () => {
-    if (!productToDelete || role !== 'admin') return;
+    if (!productToDelete || role !== 'admin' || !adminToken) return;
 
-    const serverResp = await authorizedDeleteProduct(role, productToDelete._id);
+    const serverResp = await authorizedDeleteProduct(adminToken, productToDelete._id);
     if (!serverResp.success) {
       alert(`Server error: ${serverResp.error}`);
       return;
     }
 
-    const nextList = products.filter((p) => p._id !== productToDelete._id);
-    const finalized = renumberProducts(nextList);
-    setProducts(finalized);
-    triggerAutoSave(finalized);
     setProductToDelete(null);
   };
 
-  // Submit Order (Normal User)
+  // Submit Order (Available to any user on any phone/device)
   const handlePlaceOrder = async () => {
     const items = products
       .filter(p => (userOrders[p._id] || 0) > 0)
@@ -442,9 +460,12 @@ export function InventorySheet() {
       items: formattedItems,
       grandTotal: serverResp.data.grandTotal,
     });
+
+    // Reset draft selections
+    setUserOrders({});
   };
 
-  // 7. ROLE-BASED CALCULATIONS
+  // 9. ROLE-BASED CALCULATIONS
   const adminStats: AdminInventoryStats = useMemo(() => {
     let totalStock = 0;
     let outOfStockCount = 0;
@@ -479,7 +500,6 @@ export function InventorySheet() {
       if (orderedQty > 0) {
         totalOrderedItems++;
         totalOrderedUnits += orderedQty;
-        // EXACT FORMULA: Price × Ordered Quantity
         grandTotal += pPrice * orderedQty;
       }
     }
@@ -564,6 +584,15 @@ export function InventorySheet() {
     }
   };
 
+  const handleDownloadOrderInvoice = (orderId: string) => {
+    const targetOrder = orders.find(o => o.orderId === orderId);
+    if (targetOrder) {
+      generateSharedOrderPdf(targetOrder, meta, true);
+    } else {
+      handleDownloadPdf(orderId);
+    }
+  };
+
   const isAdmin = role === 'admin';
 
   return (
@@ -589,6 +618,9 @@ export function InventorySheet() {
           userGrandTotal={userStats.grandTotal}
           onPlaceOrder={handlePlaceOrder}
           onClearOrder={handleClearOrder}
+          sharedOrdersCount={orders.length}
+          onOpenSharedOrders={() => setIsOrdersModalOpen(true)}
+          isRealtimeConnected={isRealtimeConnected}
         />
 
         <main className="max-w-7xl mx-auto px-1.5 sm:px-4 py-2 sm:py-3.5 space-y-2 sm:space-y-3">
@@ -825,8 +857,44 @@ export function InventorySheet() {
           grandTotal={completedOrder?.grandTotal || 0}
           currency={meta.currency}
           onClose={() => setCompletedOrder(null)}
-          onDownloadInvoice={() => handleDownloadPdf(completedOrder?.orderId)}
+          onDownloadInvoice={() => handleDownloadOrderInvoice(completedOrder?.orderId || '')}
         />
+
+        {/* Shared Orders History Modal (Central database orders, downloadable by any device) */}
+        <SharedOrdersModal
+          isOpen={isOrdersModalOpen}
+          onClose={() => setIsOrdersModalOpen(false)}
+          orders={orders}
+          meta={meta}
+        />
+
+        {/* Real-time Order Notification Toast */}
+        {liveNotification && (
+          <div className="fixed bottom-4 right-4 z-50 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-fade-in">
+            <span className="text-xl">🔔</span>
+            <div className="text-xs">
+              <div className="font-bold text-amber-400">Live Central Update</div>
+              <div>{liveNotification.message}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOrdersModalOpen(true);
+                setLiveNotification(null);
+              }}
+              className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 rounded-md cursor-pointer ml-1"
+            >
+              View
+            </button>
+            <button
+              type="button"
+              onClick={() => setLiveNotification(null)}
+              className="text-slate-400 hover:text-white p-1 text-sm cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Printable Invoice View */}
@@ -843,4 +911,3 @@ export function InventorySheet() {
     </div>
   );
 }
-

@@ -12,7 +12,8 @@ import {
   StoreIcon, 
   EditIcon,
   ShoppingCartIcon,
-  TrashIcon
+  TrashIcon,
+  ReceiptIcon
 } from './icons';
 import { SaveStatus, InvoiceMeta, UserRole } from '@/types/product';
 import { RoleSwitcher } from './RoleSwitcher';
@@ -36,6 +37,9 @@ interface InventoryHeaderProps {
   userGrandTotal: number;
   onPlaceOrder: () => void;
   onClearOrder: () => void;
+  sharedOrdersCount?: number;
+  onOpenSharedOrders?: () => void;
+  isRealtimeConnected?: boolean;
 }
 
 export function InventoryHeader({
@@ -57,6 +61,9 @@ export function InventoryHeader({
   userGrandTotal,
   onPlaceOrder,
   onClearOrder,
+  sharedOrdersCount = 0,
+  onOpenSharedOrders,
+  isRealtimeConnected = false,
 }: InventoryHeaderProps) {
   const [isEditingShop, setIsEditingShop] = useState(false);
   const [tempShopName, setTempShopName] = useState(meta.shopName);
@@ -85,8 +92,15 @@ export function InventoryHeader({
                 : 'CUSTOMER MODE: View Shondani catalog, set Order Qty, and submit orders'}
             </span>
           </div>
-          <div className="hidden md:flex items-center gap-2 shrink-0">
-            <span className="opacity-70">Shondani Medical Hall</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px]">
+              <span className={`w-2 h-2 rounded-full ${isRealtimeConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></span>
+              <span className="font-semibold text-slate-600">
+                {isRealtimeConnected ? 'Live Central Sync' : 'Connecting...'}
+              </span>
+            </div>
+            <span className="hidden md:inline opacity-30">|</span>
+            <span className="hidden md:inline opacity-70">Shondani Medical Hall</span>
           </div>
         </div>
       </div>
@@ -259,8 +273,25 @@ export function InventoryHeader({
           )}
         </div>
 
-        {/* Right: Print & PDF Actions */}
+        {/* Right: Orders, Print & PDF Actions */}
         <div className="flex items-center gap-1.5">
+          {onOpenSharedOrders && (
+            <button
+              type="button"
+              onClick={onOpenSharedOrders}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs sm:text-sm font-bold text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-xs transition-colors cursor-pointer"
+              title="View shared orders and download past invoices across all devices"
+            >
+              <ReceiptIcon className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Orders</span>
+              {sharedOrdersCount > 0 && (
+                <span className="px-1.5 py-0.2 text-[10px] font-extrabold rounded-full bg-indigo-600 text-white leading-tight">
+                  {sharedOrdersCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onPrintSheet}

@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { Product, InvoiceMeta, UserRole } from '../types/product';
+import { Product, InvoiceMeta, UserRole, CustomerOrder } from '../types/product';
 
 export interface InvoicePdfOptions {
   products: Product[];
@@ -421,3 +421,40 @@ export function generateInvoicePdf({
     doc,
   };
 }
+
+/**
+ * Generates an invoice PDF for an existing CustomerOrder from the central database.
+ * Enables any device (Admin or User) to download the exact shared invoice.
+ */
+export function generateSharedOrderPdf(
+  order: CustomerOrder,
+  meta: InvoiceMeta,
+  autoDownload: boolean = true
+): InvoicePdfResult {
+  const products: Product[] = order.items.map((item, idx) => ({
+    _id: item.productId || `item_${idx}`,
+    serialNumber: idx + 1,
+    name: item.productName,
+    price: item.price,
+    stock: 999, // dummy value for User role calculations
+  }));
+
+  const userOrders: Record<string, number> = {};
+  order.items.forEach((item, idx) => {
+    userOrders[item.productId || `item_${idx}`] = item.orderedQuantity;
+  });
+
+  return generateInvoicePdf({
+    products,
+    meta: {
+      ...meta,
+      invoiceNumber: order.orderId,
+      date: order.date,
+    },
+    role: 'user',
+    userOrders,
+    customerName: order.customerName,
+    autoDownload,
+  });
+}
+
