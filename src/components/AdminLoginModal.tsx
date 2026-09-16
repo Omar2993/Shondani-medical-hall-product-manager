@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { XIcon, CheckIcon, AlertCircleIcon } from './icons';
+import { XIcon, CheckIcon, AlertCircleIcon, EyeIcon, EyeOffIcon } from './icons';
 import { verifyAdminCredentials } from '@/actions/authorizedProductActions';
 
 interface AdminLoginModalProps {
@@ -17,6 +17,7 @@ export function AdminLoginModal({
 }: AdminLoginModalProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -27,21 +28,31 @@ export function AdminLoginModal({
     setError('');
     setLoading(true);
 
+    const cleanUser = username.trim();
+    const cleanPass = password.trim();
+
     try {
-      const res = await verifyAdminCredentials(username, password);
+      const res = await verifyAdminCredentials(cleanUser, cleanPass);
       if (res.success && res.data) {
         onSuccess(res.data.token);
         setUsername('');
         setPassword('');
+        setError('');
         onClose();
       } else {
-        setError(res.error || 'Invalid credentials. Access denied.');
+        setError(res.error || 'Invalid admin username or password. Access denied.');
       }
     } catch {
-      setError('An error occurred while attempting to authenticate.');
+      setError('An error occurred while attempting to authenticate. Please try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAutoFill = () => {
+    setUsername('omar');
+    setPassword('Omar88067');
+    setError('');
   };
 
   return (
@@ -78,10 +89,15 @@ export function AdminLoginModal({
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Admin Username
+              Admin Username / Name
             </label>
             <input
               type="text"
+              name="username"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="e.g. omar"
@@ -95,19 +111,48 @@ export function AdminLoginModal({
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
               Admin Password
             </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full pl-3 pr-10 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? (
+                  <EyeOffIcon className="w-4 h-4" />
+                ) : (
+                  <EyeIcon className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-500">
-            <span className="font-semibold text-slate-700">Admin Account:</span>{' '}
-            Username: <code className="font-bold text-amber-800">omar</code> • Password: <code className="font-bold text-amber-800">Omar88067</code>
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 flex items-center justify-between gap-2">
+            <div>
+              <span className="font-bold text-slate-700">Admin Account:</span>{' '}
+              Username: <code className="font-bold text-amber-800">omar</code> • Password: <code className="font-bold text-amber-800">Omar88067</code>
+            </div>
+            <button
+              type="button"
+              onClick={handleAutoFill}
+              className="px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-200/80 hover:bg-amber-300 rounded-lg transition-colors cursor-pointer shrink-0"
+              title="Click to automatically fill credentials"
+            >
+              Auto-fill
+            </button>
           </div>
 
           <div className="pt-2 flex items-center justify-end gap-3">

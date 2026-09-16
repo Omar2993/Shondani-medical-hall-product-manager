@@ -32,7 +32,8 @@ import {
   authorizedInsertAtSerial,
   authorizedBatchAdd,
   authorizedMoveProduct,
-  authorizedUpdateMeta
+  authorizedUpdateMeta,
+  verifyExistingAdminSession
 } from '@/actions/authorizedProductActions';
 
 // Fallback initial master catalog for Shondani Medical Hall
@@ -178,8 +179,16 @@ export function InventorySheet() {
     try {
       const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
       if (savedToken && savedToken.startsWith('admin_session_')) {
-        setAdminToken(savedToken);
-        setRole('admin');
+        verifyExistingAdminSession(savedToken).then((isValid) => {
+          if (isValid) {
+            setAdminToken(savedToken);
+            setRole('admin');
+          } else {
+            setAdminToken(null);
+            setRole('user');
+            localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
+          }
+        });
       }
     } catch {
       // ignore

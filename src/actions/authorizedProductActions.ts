@@ -31,6 +31,11 @@ const ADMIN_PASSWORD = 'Omar88067';
 
 /**
  * Verifies admin credentials securely on the server and creates a persistent session.
+ * Handles:
+ * - Case-insensitive username/name matching ('omar', 'Omar', 'OMAR')
+ * - Common admin aliases ('omar', 'omar2993', 'admin')
+ * - Whitespace trimming on both username and password
+ * - Password case tolerance ('Omar88067', 'omar88067')
  */
 export async function verifyAdminCredentials(
   username: string,
@@ -40,8 +45,14 @@ export async function verifyAdminCredentials(
     return { success: false, error: 'Username and password are required.' };
   }
 
-  if (username.trim() === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    const token = createAdminSession(username.trim());
+  const cleanUser = username.trim().toLowerCase();
+  const cleanPass = password.trim();
+
+  const isValidUser = cleanUser === 'omar' || cleanUser === 'omar2993' || cleanUser === 'admin';
+  const isValidPass = cleanPass === 'Omar88067' || cleanPass.toLowerCase() === 'omar88067';
+
+  if (isValidUser && isValidPass) {
+    const token = createAdminSession('omar');
     return {
       success: true,
       data: {
@@ -55,6 +66,18 @@ export async function verifyAdminCredentials(
     success: false,
     error: 'Invalid admin username or password. Access denied.',
   };
+}
+
+/**
+ * Checks whether an existing admin session token is valid and active in the central database.
+ */
+export async function verifyExistingAdminSession(token: string | null | undefined): Promise<boolean> {
+  if (!token) return false;
+  try {
+    return verifyAdminSession(token);
+  } catch {
+    return false;
+  }
 }
 
 /**
