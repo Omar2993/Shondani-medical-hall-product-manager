@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { Product, InvoiceMeta, CustomerOrder } from '@/types/product';
 
@@ -527,9 +528,10 @@ export function getOrderById(orderId: string): CustomerOrder | null {
  */
 export function createAdminSession(username: string): string {
   const db = getDb();
-  const token = 'admin_session_' + Buffer.from(`${username}:${Date.now()}:${Math.random()}`).toString('base64url');
+  // Generate a UUID token for admin session
+  const token = `admin_session_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  // 30-day session expiry
+  // 30‑day session expiry
   const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   db.prepare(`
