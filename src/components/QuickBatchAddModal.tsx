@@ -6,7 +6,7 @@ import { XIcon, LayersIcon, PlusIcon } from './icons';
 interface QuickBatchAddModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddProducts: (names: string[]) => void;
+  onAddProducts: (names: string[]) => void | Promise<void>;
 }
 
 export function QuickBatchAddModal({
@@ -15,26 +15,43 @@ export function QuickBatchAddModal({
   onAddProducts,
 }: QuickBatchAddModalProps) {
   const [text, setText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleAdd = () => {
-    const lines = text
+  const getParsedLines = (rawText: string) => {
+    let lines = rawText
       .split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0);
 
+    if (lines.length === 1 && lines[0].includes(',')) {
+      lines = lines[0]
+        .split(',')
+        .map(l => l.trim())
+        .filter(l => l.length > 0);
+    }
+    return lines;
+  };
+
+  const handleAdd = async () => {
+    const lines = getParsedLines(text);
+
     if (lines.length > 0) {
-      onAddProducts(lines);
-      setText('');
-      onClose();
+      setIsSubmitting(true);
+      try {
+        await onAddProducts(lines);
+        setText('');
+        onClose();
+      } catch (err) {
+        console.error('Error adding batch products:', err);
+      } finally {
+        setIsSubmitting(false);
+      }
     }
   };
 
-  const lineCount = text
-    .split('\n')
-    .map(l => l.trim())
-    .filter(l => l.length > 0).length;
+  const lineCount = getParsedLines(text).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
@@ -95,18 +112,19 @@ Soft Roll`}
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={lineCount === 0}
+            disabled={lineCount === 0 || isSubmitting}
             onClick={handleAdd}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-xs shadow-indigo-200 transition-colors cursor-pointer"
           >
             <PlusIcon className="w-4 h-4" />
-            Add {lineCount > 0 ? `${lineCount} Products` : 'Products'}
+            {isSubmitting ? 'Adding...' : `Add ${lineCount > 0 ? `${lineCount} Products` : 'Products'}`}
           </button>
         </div>
       </div>

@@ -233,8 +233,8 @@ export function getProductById(id: string): Product | null {
  */
 export function createProduct(name: string, price: number = 0, stock: number = 0): Product {
   const db = getDb();
-  const countRow = db.prepare('SELECT COUNT(*) as count FROM products').get() as { count: number };
-  const nextSerial = (countRow?.count || 0) + 1;
+  const maxRow = db.prepare('SELECT COALESCE(MAX(serial_number), 0) as maxSerial FROM products').get() as { maxSerial: number };
+  const nextSerial = (maxRow?.maxSerial || 0) + 1;
   const id = 'prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const now = new Date().toISOString();
 
@@ -339,9 +339,21 @@ export function insertProductAtSerial(
  * Batch add multiple products
  */
 export function batchAddProducts(names: string[]): Product[] {
+  if (!Array.isArray(names) || names.length === 0) {
+    return getAllProducts();
+  }
+
+  const validNames = names
+    .map(n => (typeof n === 'string' ? n.trim() : ''))
+    .filter(n => n.length > 0);
+
+  if (validNames.length === 0) {
+    return getAllProducts();
+  }
+
   const db = getDb();
-  const countRow = db.prepare('SELECT COUNT(*) as count FROM products').get() as { count: number };
-  let nextSerial = (countRow?.count || 0) + 1;
+  const maxRow = db.prepare('SELECT COALESCE(MAX(serial_number), 0) as maxSerial FROM products').get() as { maxSerial: number };
+  let nextSerial = (maxRow?.maxSerial || 0) + 1;
   const now = new Date().toISOString();
 
   const insertStmt = db.prepare(`
@@ -349,11 +361,16 @@ export function batchAddProducts(names: string[]): Product[] {
     VALUES (?, ?, ?, 0, 0, 0, ?, ?)
   `);
 
-  for (const name of names) {
-    if (name && name.trim()) {
+  db.exec('BEGIN TRANSACTION;');
+  try {
+    for (const name of validNames) {
       const id = 'prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
-      insertStmt.run(id, nextSerial++, name.trim(), now, now);
+      insertStmt.run(id, nextSerial++, name, now, now);
     }
+    db.exec('COMMIT;');
+  } catch (err) {
+    db.exec('ROLLBACK;');
+    throw err;
   }
 
   return getAllProducts();

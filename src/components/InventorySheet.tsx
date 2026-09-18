@@ -406,14 +406,16 @@ export function InventorySheet({ initialIsAdmin = false }: InventorySheetProps) 
 
   // Add a single blank product at the end (Admin only)
   const handleAddProduct = async () => {
-    if (role !== 'admin' || !adminToken) {
+    if (role !== 'admin') {
       alert('Permission denied: Only Administrator can add products.');
       return;
     }
 
     const serverResp = await authorizedAddProduct(adminToken, { name: 'New Product', price: 0, stock: 0 });
-    if (!serverResp.success || !serverResp.data) {
-      alert(`Server error: ${serverResp.error}`);
+    if (serverResp.success && serverResp.data) {
+      setProducts(prev => [...prev, serverResp.data!]);
+    } else {
+      alert(`Server error: ${serverResp.error || 'Failed to add product'}`);
     }
   };
 
@@ -424,10 +426,12 @@ export function InventorySheet({ initialIsAdmin = false }: InventorySheetProps) 
     price: number = 0,
     stock: number = 0
   ) => {
-    if (role !== 'admin' || !adminToken) return;
+    if (role !== 'admin') return;
 
     const serverResp = await authorizedInsertAtSerial(adminToken, targetSerial, name, price, stock);
-    if (!serverResp.success) {
+    if (serverResp.success && serverResp.data) {
+      setProducts(serverResp.data);
+    } else if (!serverResp.success) {
       alert(`Server error: ${serverResp.error}`);
     }
   }, [role, adminToken]);
@@ -442,44 +446,53 @@ export function InventorySheet({ initialIsAdmin = false }: InventorySheetProps) 
 
   // Batch Add Products (Admin only)
   const handleBatchAdd = async (names: string[]) => {
-    if (role !== 'admin' || !adminToken) return;
+    if (role !== 'admin') {
+      alert('Permission denied: Only Administrator can add products.');
+      return;
+    }
 
     const serverResp = await authorizedBatchAdd(adminToken, names);
-    if (!serverResp.success) {
+    if (serverResp.success && serverResp.data) {
+      setProducts(serverResp.data);
+    } else if (!serverResp.success) {
       alert(`Server error: ${serverResp.error}`);
     }
   };
 
   // Move product up/down (Admin only)
   const handleMoveUp = useCallback(async (serialNumber: number) => {
-    if (role !== 'admin' || !adminToken || serialNumber <= 1) return;
+    if (role !== 'admin' || serialNumber <= 1) return;
 
     const serverResp = await authorizedMoveProduct(adminToken, serialNumber, 'up');
-    if (!serverResp.success) {
+    if (serverResp.success && serverResp.data) {
+      setProducts(serverResp.data);
+    } else if (!serverResp.success) {
       alert(`Server error: ${serverResp.error}`);
     }
   }, [role, adminToken]);
 
   const handleMoveDown = useCallback(async (serialNumber: number) => {
-    if (role !== 'admin' || !adminToken) return;
+    if (role !== 'admin') return;
 
     const serverResp = await authorizedMoveProduct(adminToken, serialNumber, 'down');
-    if (!serverResp.success) {
+    if (serverResp.success && serverResp.data) {
+      setProducts(serverResp.data);
+    } else if (!serverResp.success) {
       alert(`Server error: ${serverResp.error}`);
     }
   }, [role, adminToken]);
 
   // Confirm delete product (Admin only)
   const confirmDeleteProduct = async () => {
-    if (!productToDelete || role !== 'admin' || !adminToken) return;
+    if (!productToDelete || role !== 'admin') return;
 
     const serverResp = await authorizedDeleteProduct(adminToken, productToDelete._id);
-    if (!serverResp.success) {
+    if (serverResp.success && serverResp.data?.products) {
+      setProducts(serverResp.data.products);
+      setProductToDelete(null);
+    } else if (!serverResp.success) {
       alert(`Server error: ${serverResp.error}`);
-      return;
     }
-
-    setProductToDelete(null);
   };
 
   // Submit Order (Available to any user on any phone/device)

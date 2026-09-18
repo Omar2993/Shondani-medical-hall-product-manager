@@ -265,7 +265,20 @@ export async function authorizedBatchAdd(
 ): Promise<ActionResponse<Product[]>> {
   try {
     await assertAdminRole(adminToken);
-    const updated = batchAddProducts(names);
+
+    if (!Array.isArray(names) || names.length === 0) {
+      return { success: false, error: 'Please provide at least one product name.' };
+    }
+
+    const cleanNames = names
+      .map(n => (typeof n === 'string' ? n.trim() : ''))
+      .filter(n => n.length > 0);
+
+    if (cleanNames.length === 0) {
+      return { success: false, error: 'Product names cannot be empty.' };
+    }
+
+    const updated = batchAddProducts(cleanNames);
     realtimeHub.broadcast('PRODUCTS_UPDATED', updated);
     return { success: true, data: updated };
   } catch (err: unknown) {
