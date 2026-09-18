@@ -11,6 +11,9 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
+      products,
+      meta,
+      orders,
       data: {
         products,
         meta,

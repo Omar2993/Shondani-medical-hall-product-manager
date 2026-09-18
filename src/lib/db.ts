@@ -1,8 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
+import os from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { Product, InvoiceMeta, CustomerOrder } from '@/types/product';
+import { createAdminSession, verifyAdminSession, revokeAdminSession } from './auth';
+
+export { createAdminSession, verifyAdminSession, revokeAdminSession };
 
 // Initial master catalog for Shondani Medical Hall
 const INITIAL_PRODUCTS: Array<Omit<Product, 'createdAt' | 'updatedAt'>> = [
@@ -19,21 +22,88 @@ const globalForDb = globalThis as unknown as {
   _shondaniDb?: DatabaseSync;
 };
 
-function getDb(): DatabaseSync {
+/**
+ * Resolves a reliable, writable database path across local dev and deployed serverless environments.
+ * On serverless platforms (such as Vercel/AWS Lambda), process.cwd() is read-only, so this safely falls
+ * back to os.tmpdir() and seeds it from the bundled database if present.
+ */
+function resolveDatabasePath(): string {
+  // 1. Explicit environment variable
+  if (process.env.DATABASE_PATH && process.env.DATABASE_PATH.trim()) {
+    const customPath = process.env.DATABASE_PATH.trim();
+    try {
+      const parentDir = path.dirname(customPath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+      return customPath;
+    } catch (err) {
+      console.warn(`DATABASE_PATH (${customPath}) is not writable:`, err);
+    }
+  }
+
+  // 2. Try process.cwd()/data (standard for local dev and persistent server environments)
+  const localDataDir = path.join(process.cwd(), 'data');
+  try {
+    if (!fs.existsSync(localDataDir)) {
+      fs.mkdirSync(localDataDir, { recursive: true });
+    }
+    const probeFile = path.join(localDataDir, `.probe_${Date.now()}`);
+    fs.writeFileSync(probeFile, 'ok');
+    fs.unlinkSync(probeFile);
+    return path.join(localDataDir, 'shondani.db');
+  } catch {
+    // Local directory is read-only (e.g. Vercel serverless /var/task)
+  }
+
+  // 3. Fallback to os.tmpdir() (guaranteed writable in serverless environments like AWS Lambda & Vercel)
+  try {
+    const tmpDataDir = path.join(os.tmpdir(), 'shondani-data');
+    if (!fs.existsSync(tmpDataDir)) {
+      fs.mkdirSync(tmpDataDir, { recursive: true });
+    }
+    const targetDbPath = path.join(tmpDataDir, 'shondani.db');
+
+    // If a bundled database exists in local data/ directory, copy it into /tmp
+    const bundledDbPath = path.join(process.cwd(), 'data', 'shondani.db');
+    if (fs.existsSync(bundledDbPath) && !fs.existsSync(targetDbPath)) {
+      try {
+        fs.copyFileSync(bundledDbPath, targetDbPath);
+      } catch {
+        // ignore copy errors
+      }
+    }
+    return targetDbPath;
+  } catch (err) {
+    console.warn('Could not initialize SQLite database in tmp directory:', err);
+    return ':memory:';
+  }
+}
+
+export function getRawDb(): DatabaseSync | null {
+  try {
+    return getDb();
+  } catch {
+    return null;
+  }
+}
+
+export function getDb(): DatabaseSync {
   if (globalForDb._shondaniDb) {
     return globalForDb._shondaniDb;
   }
 
-  const dataDir = path.join(process.cwd(), 'data');
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  const dbPath = path.join(dataDir, 'shondani.db');
+  const dbPath = resolveDatabasePath();
   const db = new DatabaseSync(dbPath);
 
-  // Enable WAL mode for high concurrency
-  db.exec('PRAGMA journal_mode = WAL;');
+  if (dbPath !== ':memory:') {
+    try {
+      // Enable WAL mode for high concurrency if supported by filesystem
+      db.exec('PRAGMA journal_mode = WAL;');
+    } catch {
+      // Ignore if filesystem doesn't support WAL
+    }
+  }
   db.exec('PRAGMA foreign_keys = ON;');
 
   // Initialize schema
@@ -78,6 +148,11 @@ function getDb(): DatabaseSync {
       username TEXT NOT NULL,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS revoked_sessions (
+      token TEXT PRIMARY KEY,
+      revoked_at TEXT NOT NULL
     );
   `);
 
@@ -521,34 +596,4 @@ export function getOrderById(orderId: string): CustomerOrder | null {
     })),
     grandTotal: orderRow.grand_total,
   };
-}
-
-/**
- * Create server-side verified admin session token
- */
-export function createAdminSession(username: string): string {
-  const db = getDb();
-  // Generate a UUID token for admin session
-  const token = `admin_session_${crypto.randomUUID()}`;
-  const now = new Date().toISOString();
-  // 30‑day session expiry
-  const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  db.prepare(`
-    INSERT INTO admin_sessions (token, username, created_at, expires_at)
-    VALUES (?, ?, ?, ?)
-  `).run(token, username, now, expires);
-
-  return token;
-}
-
-/**
- * Verify whether an admin session token is valid and not expired
- */
-export function verifyAdminSession(token: string): boolean {
-  if (!token) return false;
-  const db = getDb();
-  const now = new Date().toISOString();
-  const row = db.prepare('SELECT token FROM admin_sessions WHERE token = ? AND expires_at > ?').get(token, now);
-  return Boolean(row);
 }

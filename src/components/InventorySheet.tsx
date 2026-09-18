@@ -33,7 +33,9 @@ import {
   authorizedBatchAdd,
   authorizedMoveProduct,
   authorizedUpdateMeta,
-  verifyExistingAdminSession
+  verifyExistingAdminSession,
+  getAdminSessionStatus,
+  logoutAdmin,
 } from '@/actions/authorizedProductActions';
 
 // Fallback initial master catalog for Shondani Medical Hall
@@ -91,10 +93,14 @@ const INITIAL_PRODUCTS: Product[] = [
 
 const LOCAL_STORAGE_ADMIN_TOKEN = 'shondani_admin_token_v3';
 
-export function InventorySheet() {
+interface InventorySheetProps {
+  initialIsAdmin?: boolean;
+}
+
+export function InventorySheet({ initialIsAdmin = false }: InventorySheetProps) {
   // 1. Role & Auth State
-  const [role, setRole] = useState<UserRole>('user');
-  const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [role, setRole] = useState<UserRole>(initialIsAdmin ? 'admin' : 'user');
+  const [adminToken, setAdminToken] = useState<string | null>(initialIsAdmin ? 'cookie_session' : null);
 
   // 2. Authoritative Master Product Catalog (One central source of truth)
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -154,7 +160,8 @@ export function InventorySheet() {
     try {
       const res = await fetch('/api/sync', { cache: 'no-store' });
       if (res.ok) {
-        const data = await res.json();
+        const json = await res.json();
+        const data = json.data || json;
         if (Array.isArray(data.products) && data.products.length > 0) {
           setProducts(data.products);
         }
@@ -172,27 +179,61 @@ export function InventorySheet() {
 
   // Initial load & real-time SSE subscription
   useEffect(() => {
-    // 1. Fetch initial central database state
-    syncFromCentral();
+    let isMounted = true;
 
-    // 2. Check saved admin session
-    try {
-      const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
-      if (savedToken && savedToken.startsWith('admin_session_')) {
-        verifyExistingAdminSession(savedToken).then((isValid) => {
+    const initialize = async () => {
+      // 1. Fetch initial central database state
+      try {
+        const res = await fetch('/api/sync', { cache: 'no-store' });
+        if (res.ok && isMounted) {
+          const json = await res.json();
+          const data = json.data || json;
+          if (Array.isArray(data.products) && data.products.length > 0) {
+            setProducts(data.products);
+          }
+          if (data.meta) {
+            setMeta(data.meta);
+          }
+          if (Array.isArray(data.orders)) {
+            setOrders(data.orders);
+          }
+        }
+      } catch (err) {
+        console.warn('Sync from central DB failed:', err);
+      }
+
+      // 2. Check saved admin session (cookie + session verification)
+      try {
+        const status = await getAdminSessionStatus();
+        if (!isMounted) return;
+        if (status.success && status.data?.isAdmin) {
+          setRole('admin');
+          setAdminToken(status.data.token || 'cookie_session');
+          return;
+        }
+
+        // Fallback check for saved localStorage token
+        const savedToken = localStorage.getItem(LOCAL_STORAGE_ADMIN_TOKEN);
+        if (savedToken && savedToken.startsWith('admin_session_')) {
+          const isValid = await verifyExistingAdminSession(savedToken);
+          if (!isMounted) return;
           if (isValid) {
             setAdminToken(savedToken);
             setRole('admin');
+            return;
           } else {
-            setAdminToken(null);
-            setRole('user');
             localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
           }
-        });
+        }
+
+        setAdminToken(null);
+        setRole('user');
+      } catch (err) {
+        console.warn('Session restoration failed:', err);
       }
-    } catch {
-      // ignore
-    }
+    };
+
+    initialize();
 
     // 3. Connect to Server-Sent Events (SSE) for Real-Time synchronization across all devices
     let es: EventSource | null = null;
@@ -262,6 +303,7 @@ export function InventorySheet() {
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      isMounted = false;
       if (es) es.close();
       document.removeEventListener('visibilitychange', handleVisibility);
     };
@@ -347,13 +389,18 @@ export function InventorySheet() {
     }
   };
 
-  const handleLogoutAdmin = () => {
+  const handleLogoutAdmin = async () => {
     setAdminToken(null);
     setRole('user');
     try {
       localStorage.removeItem(LOCAL_STORAGE_ADMIN_TOKEN);
     } catch {
       // ignore
+    }
+    try {
+      await logoutAdmin();
+    } catch (err) {
+      console.warn('Logout server action failed:', err);
     }
   };
 

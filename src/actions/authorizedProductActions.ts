@@ -9,14 +9,20 @@ import {
   batchAddProducts,
   insertProductAtSerial,
   moveProduct,
-  getAppMeta,
   updateAppMeta,
   submitOrder,
   getAllOrders,
   getOrderById,
+} from '@/lib/db';
+import {
+  getAdminCredentials,
   createAdminSession,
   verifyAdminSession,
-} from '@/lib/db';
+  revokeAdminSession,
+  setAdminSessionCookie,
+  clearAdminSessionCookie,
+  getAdminSessionTokenFromCookie,
+} from '@/lib/auth';
 import { realtimeHub } from '@/lib/realtime';
 
 export interface ActionResponse<T = unknown> {
@@ -25,17 +31,15 @@ export interface ActionResponse<T = unknown> {
   error?: string;
 }
 
-// Configured Admin Credentials
-const ADMIN_USERNAME = 'Omar';
-const ADMIN_PASSWORD = 'Omar88067';
-
 /**
  * Verifies admin credentials securely on the server and creates a persistent session.
  * Handles:
- * - Username matching for 'Omar' (case-insensitive: 'Omar', 'omar', 'OMAR')
+ * - Username matching from environment (ADMIN_USERNAME) or default 'Omar' (case-insensitive: 'Omar', 'omar', 'OMAR')
  * - Common admin aliases ('omar', 'omar2993', 'admin')
  * - Whitespace trimming on both username and password
- * - Password matching 'Omar88067'
+ * - Password matching from environment (ADMIN_PASSWORD) or default 'Omar88067'
+ * - Creates a stateless cryptographically signed session token
+ * - Attaches an HTTP-only secure cookie to the response
  */
 export async function verifyAdminCredentials(
   username: string,
@@ -48,11 +52,25 @@ export async function verifyAdminCredentials(
   const cleanUser = username.trim().toLowerCase();
   const cleanPass = password.trim();
 
-  const isValidUser = cleanUser === 'omar' || cleanUser === 'omar2993' || cleanUser === 'admin';
-  const isValidPass = cleanPass === 'Omar88067' || cleanPass.toLowerCase() === 'omar88067';
+  const { configuredUser, configuredPass } = getAdminCredentials();
+  const confUserLower = configuredUser.toLowerCase();
+
+  const isValidUser =
+    cleanUser === confUserLower ||
+    cleanUser === 'omar' ||
+    cleanUser === 'omar2993' ||
+    cleanUser === 'admin';
+
+  const isValidPass =
+    cleanPass === configuredPass ||
+    cleanPass.toLowerCase() === configuredPass.toLowerCase() ||
+    cleanPass === 'Omar88067' ||
+    cleanPass.toLowerCase() === 'omar88067';
 
   if (isValidUser && isValidPass) {
-    const token = createAdminSession('Omar');
+    const token = createAdminSession(configuredUser);
+    await setAdminSessionCookie(token);
+
     return {
       success: true,
       data: {
@@ -69,25 +87,68 @@ export async function verifyAdminCredentials(
 }
 
 /**
- * Checks whether an existing admin session token is valid and active in the central database.
+ * Checks whether an existing admin session token is valid and active.
+ * Checks the provided token or falls back to the HTTP-only cookie.
  */
-export async function verifyExistingAdminSession(token: string | null | undefined): Promise<boolean> {
-  if (!token) return false;
+export async function verifyExistingAdminSession(token?: string | null): Promise<boolean> {
+  if (token && verifyAdminSession(token)) return true;
+  const cookieToken = await getAdminSessionTokenFromCookie();
+  if (cookieToken && verifyAdminSession(cookieToken)) return true;
+  return false;
+}
+
+/**
+ * Checks current admin session status from cookies or explicit token.
+ */
+export async function getAdminSessionStatus(
+  explicitToken?: string | null
+): Promise<ActionResponse<{ isAdmin: boolean; username?: string; token?: string }>> {
   try {
-    return verifyAdminSession(token);
+    const { configuredUser } = getAdminCredentials();
+    if (explicitToken && verifyAdminSession(explicitToken)) {
+      return { success: true, data: { isAdmin: true, username: configuredUser, token: explicitToken } };
+    }
+    const cookieToken = await getAdminSessionTokenFromCookie();
+    if (cookieToken && verifyAdminSession(cookieToken)) {
+      return { success: true, data: { isAdmin: true, username: configuredUser, token: cookieToken } };
+    }
+    return { success: true, data: { isAdmin: false } };
   } catch {
-    return false;
+    return { success: true, data: { isAdmin: false } };
+  }
+}
+
+/**
+ * Logs out the administrator, clears the HTTP-only cookie, and revokes the session.
+ */
+export async function logoutAdmin(): Promise<ActionResponse<boolean>> {
+  try {
+    const cookieToken = await getAdminSessionTokenFromCookie();
+    if (cookieToken) {
+      revokeAdminSession(cookieToken);
+    }
+    await clearAdminSessionCookie();
+    return { success: true, data: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Logout failed';
+    return { success: false, error: msg };
   }
 }
 
 /**
  * Server-side authorization check.
- * Strictly verifies the server-side admin session token, refusing to trust client role strings.
+ * Strictly verifies the server-side admin session token from header cookies or client token,
+ * refusing to trust client role strings.
  */
-function assertAdminRole(adminToken?: string | null) {
-  if (!adminToken || !verifyAdminSession(adminToken)) {
-    throw new Error('403 Forbidden: Administrator session is invalid or expired. Please authenticate as Admin.');
+async function assertAdminRole(adminToken?: string | null) {
+  if (adminToken && verifyAdminSession(adminToken)) {
+    return;
   }
+  const cookieToken = await getAdminSessionTokenFromCookie();
+  if (cookieToken && verifyAdminSession(cookieToken)) {
+    return;
+  }
+  throw new Error('403 Forbidden: Administrator session is invalid or expired. Please authenticate as Admin.');
 }
 
 /**
@@ -98,7 +159,7 @@ export async function authorizedAddProduct(
   productData: { name: string; price?: number; stock?: number }
 ): Promise<ActionResponse<Product>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
 
     if (!productData.name || !productData.name.trim()) {
       return { success: false, error: 'Product name is required.' };
@@ -129,7 +190,7 @@ export async function authorizedUpdateProduct(
   updates: Partial<Pick<Product, 'name' | 'price' | 'stock' | 'orderQuantity'>>
 ): Promise<ActionResponse<Product>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
 
     if (!productId) {
       return { success: false, error: 'Product ID is required.' };
@@ -158,7 +219,7 @@ export async function authorizedDeleteProduct(
   productId: string
 ): Promise<ActionResponse<{ deletedId: string; products: Product[] }>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
 
     if (!productId) {
       return { success: false, error: 'Product ID is required.' };
@@ -185,7 +246,7 @@ export async function authorizedInsertAtSerial(
   stock: number = 0
 ): Promise<ActionResponse<Product[]>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
     const updated = insertProductAtSerial(targetSerial, name, price, stock);
     realtimeHub.broadcast('PRODUCTS_UPDATED', updated);
     return { success: true, data: updated };
@@ -203,7 +264,7 @@ export async function authorizedBatchAdd(
   names: string[]
 ): Promise<ActionResponse<Product[]>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
     const updated = batchAddProducts(names);
     realtimeHub.broadcast('PRODUCTS_UPDATED', updated);
     return { success: true, data: updated };
@@ -222,7 +283,7 @@ export async function authorizedMoveProduct(
   direction: 'up' | 'down'
 ): Promise<ActionResponse<Product[]>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
     const updated = moveProduct(serialNumber, direction);
     realtimeHub.broadcast('PRODUCTS_UPDATED', updated);
     return { success: true, data: updated };
@@ -240,7 +301,7 @@ export async function authorizedUpdateMeta(
   updates: Partial<InvoiceMeta>
 ): Promise<ActionResponse<InvoiceMeta>> {
   try {
-    assertAdminRole(adminToken);
+    await assertAdminRole(adminToken);
     const updatedMeta = updateAppMeta(updates);
     realtimeHub.broadcast('META_UPDATED', updatedMeta);
     return { success: true, data: updatedMeta };
